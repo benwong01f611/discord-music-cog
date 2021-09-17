@@ -8,6 +8,8 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Volume
 - Skipping
 - Stopping
+- Become speaker automatically in stage channel (if the bot has the permission to mute members)
+- Command "now" shows the position of the song
 
 ## Differences
 - Fixed looping causes exception
@@ -15,3 +17,5 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Added support for speaking in stage
 - Added searching for video
 - Setting new volume will have immediate effect instead of waiting for next song
+- After the bot timed out (not getting any songs for 3 minutes), it will recreate the background task loop for checking queue
+- Will become speaker automatically

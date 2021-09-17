@@ -4,6 +4,7 @@ import itertools
 import math
 import random
 import os
+import time
 
 import discord
 import youtube_dl
@@ -76,6 +77,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.thumbnail = data.get('thumbnail')
         self.description = data.get('description')
         self.duration = self.parse_duration(int(data.get('duration')))
+        self.duration_raw = self.parse_duration_raw(int(data.get('duration')))
+        self.duration_int = int(data.get('duration'))
         self.tags = data.get('tags')
         self.url = data.get('webpage_url')
         self.views = data.get('view_count')
@@ -144,20 +147,44 @@ class YTDLSource(discord.PCMVolumeTransformer):
             duration.append('{} seconds'.format(seconds))
 
         return ', '.join(duration)
-
+    
+    @staticmethod
+    def parse_duration_raw(duration: int):
+        minutes, seconds = divmod(duration, 60)
+        hours, minutes = divmod(minutes, 60)
+        days, hours = divmod(hours, 24)
+        
+        durations = []
+        if days > 0:
+            durations.append(str(days))
+        if hours > 0:
+            durations.append(("0" if days and hours < 10 else "") + '{}'.format(hours))
+        durations.append(("0" if hours and minutes < 10 else "") + '{}'.format(minutes))
+        durations.append(("0" if seconds < 10 else "") + '{}'.format(seconds))
+        
+        return ':'.join(durations)
 
 class Song:
-    __slots__ = ('source', 'requester')
+    __slots__ = ('source', 'requester', 'starttime', 'pause_time', 'pause_duration', 'paused')
 
-    def __init__(self, source: YTDLSource):
+    def __init__(self, source: YTDLSource): 
         self.source = source
         self.requester = source.requester
+        self.starttime = None
+        self.pause_duration = 0
+        self.pause_time = 0
+        self.paused = False
 
-    def create_embed(self):
+    def create_embed(self, status: str):
+        # If a new song is being played, it will simply display how long the song is
+        # But if the command now is being executed, it will show how long the song has been played
+        if self.paused:
+            self.pause_duration += time.time() - self.pause_time
+            self.pause_time = time.time()
         embed = (discord.Embed(title='Now playing',
                                description='```css\n{0.source.title}\n```'.format(self),
                                color=discord.Color.blurple())
-                 .add_field(name='Duration', value=self.source.duration)
+                 .add_field(name='Duration', value=(self.source.duration if status == "play" else YTDLSource.parse_duration_raw(int(time.time() - self.starttime - self.pause_duration)) + "/" + self.source.duration_raw))
                  .add_field(name='Requested by', value=self.requester.mention)
                  .add_field(name='Uploader', value='[{0.source.uploader}]({0.source.uploader_url})'.format(self))
                  .add_field(name='URL', value='[Click]({0.source.url})'.format(self))
@@ -205,6 +232,11 @@ class VoiceState:
 
         self.audio_player = bot.loop.create_task(self.audio_player_task())
         self.skipped = False
+        self.pause_time = 0.0
+        self.pause_duration = 0.0
+
+    def recreate_bg_task(self, ctx):
+        self.__init__(self.bot, ctx)
 
     def __del__(self):
         self.audio_player.cancel()
@@ -256,7 +288,7 @@ class VoiceState:
                         self.skipped = False
                         self.stopped = False
                 except asyncio.TimeoutError:
-                    self.bot.loop.create_task(self.stop())
+                    await self.stop()
                     return
             else:
                 # Loop but skipped, proceed to next song and keep looping
@@ -268,14 +300,15 @@ class VoiceState:
                             self.skipped = False
                             self.stopped = False
                     except asyncio.TimeoutError:
-                        self.bot.loop.create_task(self.stop())
+                        await self.stop()
                         return
                 source = await YTDLSource.create_source(self.ctx, self.current.source.url, loop=self.bot.loop)
                 song = Song(source)
                 self.current = song
             self.current.source.volume = self._volume
             self.voice.play(self.current.source, after=self.play_next_song)
-            await self.current.source.channel.send(embed=self.current.create_embed())
+            self.current.starttime = time.time()
+            await self.current.source.channel.send(embed=self.current.create_embed("play"))
             # Create task for updating volume
             self.bot.loop.create_task(self.update_volume())
             await self.next.wait()
@@ -329,7 +362,8 @@ class Music(commands.Cog):
         if not state:
             state = VoiceState(self.bot, ctx)
             self.voice_states[ctx.guild.id] = state
-
+        if state.audio_player.done():
+            state.recreate_bg_task(ctx)
         return state
 
     def cog_unload(self):
@@ -345,8 +379,9 @@ class Music(commands.Cog):
     async def cog_before_invoke(self, ctx: commands.Context):
         ctx.voice_state = self.get_voice_state(ctx)
 
-    async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
-        await ctx.send('An error occurred: {}'.format(str(error)))
+    #async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
+    #    await ctx.send('An error occurred: {}'.format(str(error)))
+
 
     @commands.command(name='join', invoke_without_subcommand=True)
     async def _join(self, ctx: commands.Context):
@@ -355,9 +390,13 @@ class Music(commands.Cog):
         destination = ctx.author.voice.channel
         if ctx.voice_state.voice:
             await ctx.voice_state.voice.move_to(destination)
-            return
-
-        ctx.voice_state.voice = await destination.connect()
+        else:
+            ctx.voice_state.voice = await destination.connect()
+        if isinstance(ctx.author.voice.channel, discord.StageChannel):
+            try:
+                await ctx.me.edit(suppress=False)
+            except:
+                await ctx.send("I have no permission to speak! Please invite me to speak")
 
     @commands.command(name='summon')
     async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
@@ -404,7 +443,7 @@ class Music(commands.Cog):
         """Displays the currently playing song."""
         if(ctx.voice_state.current is None):
             return await ctx.send("There is no songs playing right now.")
-        await ctx.send(embed=ctx.voice_state.current.create_embed())
+        await ctx.send(embed=ctx.voice_state.current.create_embed("now"))
 
     @commands.command(name='pause')
     async def _pause(self, ctx: commands.Context):
@@ -413,6 +452,8 @@ class Music(commands.Cog):
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
             await ctx.message.add_reaction('⏯')
+            ctx.voice_state.current.pause_time = time.time()
+            ctx.voice_state.current.paused = True
 
     @commands.command(name='resume', aliases=['r'])
     async def _resume(self, ctx: commands.Context):
@@ -421,6 +462,9 @@ class Music(commands.Cog):
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
             ctx.voice_state.voice.resume()
             await ctx.message.add_reaction('⏯')
+            ctx.voice_state.current.pause_duration += time.time() - ctx.voice_state.current.pause_time
+            ctx.voice_state.current.pause_time = 0
+            ctx.voice_state.current.paused = False
 
     @commands.command(name='stop')
     async def _stop(self, ctx: commands.Context):
@@ -593,7 +637,7 @@ class Music(commands.Cog):
 
         try:
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
-            await message.edit(embed=discord.Embed(title="Selected:", description=result[reaction_list.index(reaction.emoji)]["title"]), color=discord.Color.green())
+            await message.edit(embed=discord.Embed(title="Selected:", description=result[reaction_list.index(reaction.emoji)]["title"], color=discord.Color.green()))
             if not ctx.author.voice or not ctx.author.voice.channel:
                 return await ctx.send('You are not connected to any voice channel.')
 
