@@ -597,8 +597,8 @@ class Music(commands.Cog):
             if data is None:
                 raise YTDLError('Couldn\'t find anything that matches `{}`'.format(search))
             if 'entries' in data and len(data["entries"]) > 1:
-                import time
-                start_time = time.time()
+                #import time
+                #start_time = time.time()
                 # For storing tasks
                 tasks = []
                 # Set current event loop to a new event loop, I don't know whether using default event loop will cause issues or not
@@ -620,7 +620,7 @@ class Music(commands.Cog):
                 for songs, entry in enumerate(playlist):
                     await ctx.voice_state.songs.put(entry[1])
                 await self.respond(ctx,'Enqueued {} songs'.format(str(songs)))
-                await self.respond(ctx, 'Took {} to finish'.format(time.time()-start_time))
+                #await self.respond(ctx, 'Took {} to finish'.format(time.time()-start_time))
             else:
                 # Just a normal song
                 source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
