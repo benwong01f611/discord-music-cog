@@ -235,6 +235,8 @@ class VoiceState:
         self.pause_time = 0.0
         self.pause_duration = 0.0
 
+        self.loopqueue = False
+
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
 
@@ -270,6 +272,9 @@ class VoiceState:
             if self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
+    async def create_song_source(self, ctx, song):
+        return Song(await YTDLSource.create_source(ctx, song.url, loop=self.bot.loop))
+    
     async def audio_player_task(self):
         while True:
             self.next.clear()
@@ -285,6 +290,9 @@ class VoiceState:
                         if self.skipped:
                             self.current = None
                         self.current = await self.songs.get()
+                        # If loop queue, put the current song back to the end of the queue
+                        if self.loopqueue:
+                            await self.songs.put(await self.create_song_source(self._ctx, self.current.source))
                         self.skipped = False
                         self.stopped = False
                 except asyncio.TimeoutError:
@@ -302,9 +310,7 @@ class VoiceState:
                     except asyncio.TimeoutError:
                         await self.stop()
                         return
-                source = await YTDLSource.create_source(self.ctx, self.current.source.url, loop=self.bot.loop)
-                song = Song(source)
-                self.current = song
+                self.current = await self.create_song_source(self._ctx, self.current.source)
             self.current.source.volume = self._volume
             self.voice.play(self.current.source, after=self.play_next_song)
             self.current.starttime = time.time()
@@ -335,6 +341,12 @@ class VoiceState:
 
 
 class Music(commands.Cog):
+    async def respond(self, ctx: commands.Context, message: str=None, embed: discord.Embed=None, reply: bool=False):
+        if reply:
+            return await ctx.message.reply(message, embed=embed)
+        else:
+            return await ctx.send(message, embed=embed)
+    
     async def retrieveSong(self, ctx, url, playlist, pos):
         loop = asyncio.get_event_loop()
         partial = functools.partial(YTDLSource.ytdl.extract_info, url, download=False)
@@ -389,14 +401,17 @@ class Music(commands.Cog):
 
         destination = ctx.author.voice.channel
         if ctx.voice_state.voice:
+            await self.respond(ctx, "Switched from **{}** to **{}**.".format(ctx.voice_state.voice.channel.name, destination))
             await ctx.voice_state.voice.move_to(destination)
         else:
+            await self.respond(ctx, "Joined **{}**.".format(destination))
             ctx.voice_state.voice = await destination.connect()
         if isinstance(ctx.author.voice.channel, discord.StageChannel):
             try:
+                await asyncio.sleep(1)
                 await ctx.me.edit(suppress=False)
             except:
-                await ctx.send("I have no permission to speak! Please invite me to speak")
+                await self.respond(ctx, "I have no permission to speak! Please invite me to speak")
 
     @commands.command(name='summon')
     async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
@@ -406,22 +421,30 @@ class Music(commands.Cog):
         """
 
         if not channel and not ctx.author.voice:
-            raise VoiceError('You are neither connected to a voice channel nor specified a channel to join.')
+            return await self.respond(ctx, 'You are neither connected to a voice channel nor specified a channel to join.')
 
         destination = channel or ctx.author.voice.channel
         if ctx.voice_state.voice:
+            await self.respond(ctx, "Switched from **{}** to **{}**.".format(ctx.voice_state.voice.channel.name, destination.name))
             await ctx.voice_state.voice.move_to(destination)
-            return
-
-        ctx.voice_state.voice = await destination.connect()
+        else:
+            await self.respond(ctx, "Joined **{}**.".format(destination.name))
+            ctx.voice_state.voice = await destination.connect()
+        if isinstance(ctx.author.voice.channel, discord.StageChannel):
+            try:
+                await asyncio.sleep(1)
+                await ctx.me.edit(suppress=False)
+            except:
+                await self.respond(ctx, "I have no permission to speak! Please invite me to speak")
 
     @commands.command(name='leave', aliases=['disconnect', 'dc'])
     async def _leave(self, ctx: commands.Context):
         """Clears the queue and leaves the voice channel."""
 
         if not ctx.voice_state.voice:
-            return await ctx.send('Not connected to any voice channel.')
+            return await self.respond(ctx, 'Not connected to any voice channel.')
 
+        await ctx.message.add_reaction('⏹')
         await ctx.voice_state.stop()
         del self.voice_states[ctx.guild.id]
 
@@ -430,20 +453,20 @@ class Music(commands.Cog):
         """Sets the volume of the player."""
 
         if not ctx.voice_state.is_playing:
-            return await ctx.send('Nothing being played at the moment.')
+            return await self.respond(ctx, 'Nothing being played at the moment.')
 
-        if 0 > volume > 100:
-            return await ctx.send('Volume must be between 0 and 100')
+        if 0 > volume or volume > 100:
+            return await self.respond(ctx, 'Volume must be between 0 and 100')
 
         ctx.voice_state.volume = volume / 100
-        await ctx.send('Volume of the player set to {}%'.format(volume))
+        await self.respond(ctx, 'Volume of the player set to {}%'.format(volume))
 
     @commands.command(name='now', aliases=['current', 'playing'])
     async def _now(self, ctx: commands.Context):
         """Displays the currently playing song."""
         if(ctx.voice_state.current is None):
-            return await ctx.send("There is no songs playing right now.")
-        await ctx.send(embed=ctx.voice_state.current.create_embed("now"))
+            return await self.respond(ctx, "There is no songs playing right now.")
+        await self.respond(ctx, embed=ctx.voice_state.current.create_embed("now"))
 
     @commands.command(name='pause')
     async def _pause(self, ctx: commands.Context):
@@ -451,9 +474,11 @@ class Music(commands.Cog):
 
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
-            await ctx.message.add_reaction('⏯')
+            await ctx.message.add_reaction('⏸')
             ctx.voice_state.current.pause_time = time.time()
             ctx.voice_state.current.paused = True
+        else:
+            await self.respond(ctx, "There is no songs playing right now.")
 
     @commands.command(name='resume', aliases=['r'])
     async def _resume(self, ctx: commands.Context):
@@ -461,10 +486,12 @@ class Music(commands.Cog):
 
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
             ctx.voice_state.voice.resume()
-            await ctx.message.add_reaction('⏯')
+            await ctx.message.add_reaction('▶')
             ctx.voice_state.current.pause_duration += time.time() - ctx.voice_state.current.pause_time
             ctx.voice_state.current.pause_time = 0
             ctx.voice_state.current.paused = False
+        else:
+            await self.respond(ctx, "There is no songs paused right now.") 
 
     @commands.command(name='stop')
     async def _stop(self, ctx: commands.Context):
@@ -484,7 +511,7 @@ class Music(commands.Cog):
         """
 
         if not ctx.voice_state.is_playing:
-            return await ctx.send('Not playing any music right now...')
+            return await self.respond(ctx, 'Not playing any music right now...')
 
         await ctx.message.add_reaction('⏭')
         ctx.voice_state.skip()
@@ -497,7 +524,7 @@ class Music(commands.Cog):
         """
 
         if len(ctx.voice_state.songs) == 0:
-            return await ctx.send('Empty queue.')
+            return await self.respond(ctx, 'Empty queue.')
 
         items_per_page = 10
         pages = math.ceil(len(ctx.voice_state.songs) / items_per_page)
@@ -509,26 +536,25 @@ class Music(commands.Cog):
         for i, song in enumerate(ctx.voice_state.songs[start:end], start=start):
             queue += '`{0}.` [**{1.source.title}**]({1.source.url})\n'.format(i + 1, song)
 
-        embed = (discord.Embed(description='**{} tracks:**\n\n{}'.format(len(ctx.voice_state.songs), queue))
+        await self.respond(ctx, embed=discord.Embed(description='**{} tracks:**\n\n{}'.format(len(ctx.voice_state.songs), queue))
                  .set_footer(text='Viewing page {}/{}'.format(page, pages)))
-        await ctx.send(embed=embed)
 
     @commands.command(name='shuffle')
     async def _shuffle(self, ctx: commands.Context):
         """Shuffles the queue."""
 
         if len(ctx.voice_state.songs) == 0:
-            return await ctx.send('Empty queue.')
+            return await self.respond(ctx,'Empty queue.')
 
         ctx.voice_state.songs.shuffle()
-        await ctx.message.add_reaction('✅')
+        await ctx.message.add_reaction('🔀')
 
     @commands.command(name='remove')
     async def _remove(self, ctx: commands.Context, index: int):
         """Removes a song from the queue at a given index."""
 
         if len(ctx.voice_state.songs) == 0:
-            return await ctx.send('Empty queue.')
+            return await self.respond(ctx,'Empty queue.')
 
         ctx.voice_state.songs.remove(index - 1)
         await ctx.message.add_reaction('✅')
@@ -539,14 +565,13 @@ class Music(commands.Cog):
 
         Invoke this command again to unloop the song.
         """
-        #return await ctx.send("Looping the same song causes some problem, developer is looking into it.")
         if not ctx.voice_state.is_playing:
-            return await ctx.send('Nothing being played at the moment.')
+            return await self.respond(ctx,'Nothing being played at the moment.')
 
         # Inverse boolean value to loop and unloop.
         ctx.voice_state.loop = not ctx.voice_state.loop
         ctx.voice_state.ctx = ctx
-        await ctx.send(("Enabled" if ctx.voice_state.loop else "Disabled") + " looping")
+        await self.respond(ctx,("Enabled" if ctx.voice_state.loop else "Disabled") + " looping")
 
     @commands.command(name='play', aliases=["p"])
     async def _play(self, ctx: commands.Context, *, search: str):
@@ -565,23 +590,22 @@ class Music(commands.Cog):
         loop = self.bot.loop
         loop_playlist = asyncio.new_event_loop()
         try:
-            await ctx.send('Searching for: **{}**'.format(search))
+            await self.respond(ctx,'Searching for: **{}**'.format(search))
             # Check playlist
             partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False)
             data = await loop.run_in_executor(None, partial)
             if data is None:
                 raise YTDLError('Couldn\'t find anything that matches `{}`'.format(search))
             if 'entries' in data and len(data["entries"]) > 1:
+                import time
+                start_time = time.time()
                 # For storing tasks
                 tasks = []
                 # Set current event loop to a new event loop, I don't know whether using default event loop will cause issues or not
                 asyncio.set_event_loop(loop_playlist)
                 # Update the event loop in variable, it is a must or else it won't run
                 loop_playlist = asyncio.get_event_loop()
-                # Unused debug messages
-                #import time
-                #start_time = time.time()
-                await ctx.send("Playlist detected, please wait while I am retrieving the playlist data.")
+                await self.respond(ctx,"Playlist detected, please wait while I am retrieving the playlist data.")
                 playlist = []
                 for pos, song in enumerate(data["entries"]):
                     # Youtube only, guess no one would play other than Youtube, if yes, fuck off please
@@ -595,18 +619,17 @@ class Music(commands.Cog):
                 # Add all songs to the pending list
                 for songs, entry in enumerate(playlist):
                     await ctx.voice_state.songs.put(entry[1])
-                await ctx.send('Enqueued {} songs'.format(str(songs)))
-                # Unused debug messages
-                #await ctx.send("Takes {} seconds".format(str(time.time()-start_time)))
+                await self.respond(ctx,'Enqueued {} songs'.format(str(songs)))
+                await self.respond(ctx, 'Took {} to finish'.format(time.time()-start_time))
             else:
                 # Just a normal song
                 source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
                 song = Song(source)
                 await ctx.voice_state.songs.put(song)
-                await ctx.send('Enqueued {}'.format(str(source)))
+                await self.respond(ctx,'Enqueued {}'.format(str(source)))
             ctx.voice_state.stopped = False
         except YTDLError as e:
-            await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
+            await self.respond(ctx,'An error occurred while processing this request: {}'.format(str(e)))
             
     @commands.command(name='search')
     async def search(self, ctx, *, keyword: str):
@@ -627,38 +650,58 @@ class Music(commands.Cog):
                                 color=discord.Color.green())
         for count, entry in enumerate(result):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[Link]({entry["url"]})' + "\nDuration: " + entry["duration"] + "\n", inline=False)
-        message = await ctx.send(embed=embed)
+        message = await self.respond(ctx,embed=embed)
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         for x in range(count + 1):
             await message.add_reaction(reaction_list[x])
         
         def check(reaction, user):
-            return user == ctx.message.author and str(reaction.emoji) in ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+            return user == ctx.message.author and str(reaction.emoji) in reaction_list
 
         try:
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
             await message.edit(embed=discord.Embed(title="Selected:", description=result[reaction_list.index(reaction.emoji)]["title"], color=discord.Color.green()))
             if not ctx.author.voice or not ctx.author.voice.channel:
-                return await ctx.send('You are not connected to any voice channel.')
+                return await self.respond(ctx,'You are not connected to any voice channel.')
 
             if ctx.voice_client:
                 if ctx.voice_client.channel != ctx.author.voice.channel:
-                    return await ctx.send('Bot is already in a voice channel.')
-            #await ctx.send("Selected " + result[reaction_list.index(reaction.emoji)]["url"])
+                    return await self.respond(ctx,'Bot is already in a voice channel.')
             await self._play(ctx=ctx, search=result[reaction_list.index(reaction.emoji)]["url"])
 
         except asyncio.TimeoutError:
-            await ctx.send("Timed out.")
+            await self.respond(ctx, "Timed out, not receving any response...")
     
+    @commands.command(name='musicreload')
+    async def musicreload(self, ctx):
+        await ctx.voice_state.stop()
+        try:
+            await ctx.me.voice.disconnect()
+        except:
+            pass
+        del self.voice_states[ctx.guild.id]
+        await self.respond(ctx, "Music bot reloaded")
+
+    @commands.command(name="loopqueue", aliases=['lq'])
+    async def loopqueue(self, ctx):
+        if not ctx.voice_state.is_playing:
+            return await self.respond(ctx,'Nothing being played at the moment.')
+        
+        ctx.voice_state.loopqueue = not ctx.voice_state.loopqueue
+        # The current song will also loop if loop queue enabled
+        if ctx.voice_state.loopqueue:
+            await ctx.voice_state.songs.put(await ctx.voice_state.create_song_source(ctx, ctx.voice_state.current.source))
+        await self.respond(ctx,("Enabled" if ctx.voice_state.loopqueue else "Disabled") + " queue looping")
+
     @_join.before_invoke
     @_play.before_invoke
     async def ensure_voice_state(self, ctx: commands.Context):
         if not ctx.author.voice or not ctx.author.voice.channel:
-            raise commands.CommandError('You are not connected to any voice channel.')
+            await self.respond(ctx, "You are not connected to any voice channel.")
 
         if ctx.voice_client:
             if ctx.voice_client.channel != ctx.author.voice.channel:
-                raise commands.CommandError('Bot is already in a voice channel.')
+                await self.respond(ctx, "Bot is already in a voice channel.")
 
 def setup(bot):
     bot.add_cog(Music(bot))

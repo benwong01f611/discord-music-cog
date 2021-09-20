@@ -4,7 +4,7 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Play / Pause / Stop music
 - Queue
 - Add playlist to queue (it will takes a while to search all songs)
-- Looping
+- Looping (Single song and queue)
 - Volume
 - Skipping
 - Stopping
