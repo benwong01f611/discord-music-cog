@@ -312,7 +312,7 @@ class VoiceState:
                     except asyncio.TimeoutError:
                         await self.stop()
                         return
-                self.current = await self.create_song_source(self._ctx, self.current.source)
+                self.current = await self.create_song_source(self._ctx, self.current.source.url)
             self.current.source.volume = self._volume
             self.voice.play(self.current.source, after=self.play_next_song)
             self.current.starttime = time.time()
