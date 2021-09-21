@@ -269,11 +269,11 @@ class VoiceState:
             # Without sleep, it will cause lag (at least it lagged on my laptop hahahahahah)
             await asyncio.sleep(1)
             # If the volume is updated, update it
-            if self.current and self.current.source.volume != self._volume:
+            if not isinstance(self.current, dict) and self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
-    async def create_song_source(self, ctx, song):
-        return Song(await YTDLSource.create_source(ctx, song.url, loop=self.bot.loop))
+    async def create_song_source(self, ctx, url):
+        return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop))
     
     async def audio_player_task(self):
         while True:
@@ -290,9 +290,10 @@ class VoiceState:
                         if self.skipped:
                             self.current = None
                         self.current = await self.songs.get()
+                        self.current = await self.create_song_source(self._ctx, self.current["url"])
                         # If loop queue, put the current song back to the end of the queue
                         if self.loopqueue:
-                            await self.songs.put(await self.create_song_source(self._ctx, self.current.source))
+                            await self.songs.put({"url": self.current.source.url, "title": self.current.source.title})
                         self.skipped = False
                         self.stopped = False
                 except asyncio.TimeoutError:
@@ -305,6 +306,7 @@ class VoiceState:
                     try:
                         async with timeout(180):  # 3 minutes
                             self.current = await self.songs.get()
+                            self.current = await self.create_song_source(self._ctx, self.current["url"])
                             self.skipped = False
                             self.stopped = False
                     except asyncio.TimeoutError:
@@ -416,7 +418,6 @@ class Music(commands.Cog):
     @commands.command(name='summon')
     async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
         """Summons the bot to a voice channel.
-
         If no channel was specified, it joins your channel.
         """
 
@@ -519,7 +520,6 @@ class Music(commands.Cog):
     @commands.command(name='queue', aliases=["q"])
     async def _queue(self, ctx: commands.Context, *, page: int = 1):
         """Shows the player's queue.
-
         You can optionally specify the page to show. Each page contains 10 elements.
         """
 
@@ -534,7 +534,7 @@ class Music(commands.Cog):
 
         queue = ''
         for i, song in enumerate(ctx.voice_state.songs[start:end], start=start):
-            queue += '`{0}.` [**{1.source.title}**]({1.source.url})\n'.format(i + 1, song)
+            queue += '`{0}.` [**{1[title]}**]({1[url]})\n'.format(i + 1, song)
 
         await self.respond(ctx, embed=discord.Embed(description='**{} tracks:**\n\n{}'.format(len(ctx.voice_state.songs), queue))
                  .set_footer(text='Viewing page {}/{}'.format(page, pages)))
@@ -562,7 +562,6 @@ class Music(commands.Cog):
     @commands.command(name='loop')
     async def _loop(self, ctx: commands.Context):
         """Loops the currently playing song.
-
         Invoke this command again to unloop the song.
         """
         if not ctx.voice_state.is_playing:
@@ -576,10 +575,8 @@ class Music(commands.Cog):
     @commands.command(name='play', aliases=["p"])
     async def _play(self, ctx: commands.Context, *, search: str):
         """Plays a song.
-
         If there are songs in the queue, this will be queued until the
         other songs finished playing.
-
         This command automatically searches from various sites if no URL is provided.
         A list of these sites can be found here: https://rg3.github.io/youtube-dl/supportedsites.html
         """
@@ -588,45 +585,39 @@ class Music(commands.Cog):
             await ctx.invoke(self._join)
         
         loop = self.bot.loop
-        loop_playlist = asyncio.new_event_loop()
         try:
             await self.respond(ctx,'Searching for: **{}**'.format(search))
-            # Check playlist
-            partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False)
-            data = await loop.run_in_executor(None, partial)
-            if data is None:
-                raise YTDLError('Couldn\'t find anything that matches `{}`'.format(search))
-            if 'entries' in data and len(data["entries"]) > 1:
+            if "https://www.youtube.com/playlist?list=" in search:
                 #import time
                 #start_time = time.time()
-                # For storing tasks
-                tasks = []
-                # Set current event loop to a new event loop, I don't know whether using default event loop will cause issues or not
-                asyncio.set_event_loop(loop_playlist)
-                # Update the event loop in variable, it is a must or else it won't run
-                loop_playlist = asyncio.get_event_loop()
                 await self.respond(ctx,"Playlist detected, please wait while I am retrieving the playlist data.")
+                partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False, process=False)
+                data = await loop.run_in_executor(None, partial)
+                if data is None:
+                    raise YTDLError('Couldn\'t find anything that matches `{}`'.format(search))
+                # [:] should copy the list as without [:] it is pass by reference
+                entries = list(data["entries"])[:]
                 playlist = []
-                for pos, song in enumerate(data["entries"]):
+                for pos, song in enumerate(entries):
                     # Youtube only, guess no one would play other than Youtube, if yes, fuck off please
                     url = "https://www.youtube.com/watch?v=" + song["id"]
-                    # Call background task
-                    tasks.append(loop_playlist.create_task(self.retrieveSong(ctx, url, playlist, pos)))
-                # Wait for all tasks to be finished
-                await asyncio.wait(tasks)
+                    title = song["title"]
+                    playlist.append({"pos": pos, "url": url, "title": title})
                 # Sort the playlist variable to match with the order in YouTube
-                playlist.sort(key=lambda song: song[0])
+                playlist.sort(key=lambda song: song["pos"])
                 # Add all songs to the pending list
                 for songs, entry in enumerate(playlist):
-                    await ctx.voice_state.songs.put(entry[1])
+                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"]})
                 await self.respond(ctx,'Enqueued {} songs'.format(str(songs)))
                 #await self.respond(ctx, 'Took {} to finish'.format(time.time()-start_time))
             else:
                 # Just a normal song
-                source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
-                song = Song(source)
-                await ctx.voice_state.songs.put(song)
-                await self.respond(ctx,'Enqueued {}'.format(str(source)))
+                partial = functools.partial(YTDLSource.ytdl.extract_info, search, download=False)
+                data = await loop.run_in_executor(None, partial)
+                if "entries" in data:
+                    data = data["entries"][0]
+                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"]})
+                await self.respond(ctx,'Enqueued {}'.format(data["title"]))
             ctx.voice_state.stopped = False
         except YTDLError as e:
             await self.respond(ctx,'An error occurred while processing this request: {}'.format(str(e)))
@@ -690,7 +681,7 @@ class Music(commands.Cog):
         ctx.voice_state.loopqueue = not ctx.voice_state.loopqueue
         # The current song will also loop if loop queue enabled
         if ctx.voice_state.loopqueue:
-            await ctx.voice_state.songs.put(await ctx.voice_state.create_song_source(ctx, ctx.voice_state.current.source))
+            await ctx.voice_state.songs.put({"url": ctx.voice_state.current.source.url, "title": ctx.voice_state.current.source.title})
         await self.respond(ctx,("Enabled" if ctx.voice_state.loopqueue else "Disabled") + " queue looping")
 
     @_join.before_invoke

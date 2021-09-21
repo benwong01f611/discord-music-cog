@@ -19,3 +19,4 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Setting new volume will have immediate effect instead of waiting for next song
 - After the bot timed out (not getting any songs for 3 minutes), it will recreate the background task loop for checking queue
 - Will become speaker automatically
+- Reworked song queue to store URL and title only, as queuing a large number of songs will cause lag (originally it stores FFMPEG object)
