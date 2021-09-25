@@ -10,6 +10,7 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Stopping
 - Become speaker automatically in stage channel (if the bot has the permission to mute members)
 - Command "now" shows the position of the song
+- Play uploaded files
 
 ## Differences
 - Fixed looping causes exception
