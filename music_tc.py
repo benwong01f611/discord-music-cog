@@ -369,7 +369,7 @@ class VoiceState:
                             self.skipped = False
                             self.stopped = False
                 except asyncio.TimeoutError:
-                    await self.stop()
+                    await self.stop(leave=True)
                     return
             else:
                 # Loop but skipped, proceed to next song and keep looping
@@ -386,7 +386,7 @@ class VoiceState:
                                 self.skipped = False
                                 self.stopped = False
                     except asyncio.TimeoutError:
-                        await self.stop()
+                        await self.stop(leave=True)
                         return
                 else:
                     if "local@" in self.current.source.url:
@@ -415,12 +415,13 @@ class VoiceState:
         if self.is_playing:
             self.voice.stop()
 
-    async def stop(self):
+    async def stop(self, leave=False):
         self.songs.clear()
         self.current = None
-        if self.voice:
-            await self.voice.disconnect()
-            self.voice = None
+        if leave:
+            if self.voice:
+                await self.voice.disconnect()
+                self.voice = None
 
 
 class Music(commands.Cog):
@@ -463,7 +464,9 @@ class Music(commands.Cog):
 
     def cog_unload(self):
         for state in self.voice_states.values():
-            self.bot.loop.create_task(state.stop())
+            self.bot.loop.create_task(state.stop(leave=True))
+        for voicestate in self.voice_state:
+            del self.voice_states[voicestate]
         shutil.rmtree("./tempMusic")
 
     def cog_check(self, ctx: commands.Context):
@@ -482,14 +485,24 @@ class Music(commands.Cog):
     @commands.command(name='join', invoke_without_subcommand=True)
     async def _join(self, ctx: commands.Context):
         """Joins a voice channel."""
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await self.respond(ctx,embed=discord.Embed(title=":x: 你需要先進入一個語音頻道！",color=0xff0000), reply=True)
+            return False
 
+        if ctx.voice_client:
+            if ctx.voice_client.channel != ctx.author.voice.channel:
+                await self.respond(ctx,embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！",color=0xff0000), reply=True)
+                return False
+        
         destination = ctx.author.voice.channel
-        if ctx.voice_state.voice:
-            await self.respond(ctx, embed=discord.Embed(title=":white_check_mark: 機器人已更換頻道！",color=0x1eff00), reply=True)
-            await ctx.voice_state.voice.move_to(destination)
-        else:
-            await self.respond(ctx, embed=discord.Embed(title=":white_check_mark: 機器人已進入頻道！",color=0x1eff00), reply=True)
-            ctx.voice_state.voice = await destination.connect()
+
+        # Check permission
+        if not destination.permissions_for(ctx.me).connect:
+            return await self.respond(ctx,embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！",color=0xff0000), reply=True)
+
+        ctx.voice_state.voice = await destination.connect()
+        await self.respond(ctx, embed=discord.Embed(title=":white_check_mark: 機器人已進入頻道！",color=0x1eff00), reply=True)
+
         if isinstance(ctx.author.voice.channel, discord.StageChannel):
             try:
                 await asyncio.sleep(1)
@@ -510,6 +523,11 @@ class Music(commands.Cog):
             await self.respond(ctx, embed=discord.Embed(title=":x: 你必須指定或進入一個語音頻道！",color=0xff0000), reply=True)
 
         destination = channel or ctx.author.voice.channel
+
+        # Check permission
+        if not destination.permissions_for(ctx.me).connect:
+            return await self.respond(ctx,embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！",color=0xff0000), reply=True)
+        
         if ctx.voice_state.voice:
             await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！",color=0x1eff00), reply=True)
             await ctx.voice_state.voice.move_to(destination)
@@ -527,17 +545,22 @@ class Music(commands.Cog):
     async def _leave(self, ctx: commands.Context):
         """Clears the queue and leaves the voice channel."""
 
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+
         if not ctx.voice_state.voice:
             return await self.respond(ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！",color=0xff0000), reply=True)
 
         await self.respond(ctx, embed=discord.Embed(title=":white_check_mark: 機器人已離開頻道！",color=0x1eff00), reply=True)
-        await ctx.voice_state.stop()
+        await ctx.voice_state.stop(leave=True)
         del self.voice_states[ctx.guild.id]
 
     @commands.command(name='volume', aliases=['v'])
     async def _volume(self, ctx: commands.Context, *, volume: int):
         """Sets the volume of the player."""
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+        
         if not ctx.voice_state:
             return await self.respond(ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！！",color=0xff0000), reply=True)
 
@@ -557,7 +580,8 @@ class Music(commands.Cog):
     @commands.command(name='pause')
     async def _pause(self, ctx: commands.Context):
         """Pauses the currently playing song."""
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
             await self.respond(ctx,embed=discord.Embed(title=":arrow_forward: 已暫停目前歌曲！",color=0x1eff00), reply=True)
@@ -569,7 +593,8 @@ class Music(commands.Cog):
     @commands.command(name='resume', aliases=['r'])
     async def _resume(self, ctx: commands.Context):
         """Resumes a currently paused song."""
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
             ctx.voice_state.voice.resume()
             await self.respond(ctx,embed=discord.Embed(title=":pause_button: 已開始繼續目前歌曲！",color=0x1eff00), reply=True)
@@ -582,11 +607,12 @@ class Music(commands.Cog):
     @commands.command(name='stop')
     async def _stop(self, ctx: commands.Context):
         """Stops playing song and clears the queue."""
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         ctx.voice_state.songs.clear()
 
         if ctx.voice_state.is_playing:
-            ctx.voice_state.voice.stop()
+            await ctx.voice_state.stop()
             ctx.voice_state.stopped = True
             await self.respond(ctx,embed=discord.Embed(title=":record_button: 已清除並停止所有音樂！",color=0x1eff00), reply=True)
 
@@ -595,7 +621,8 @@ class Music(commands.Cog):
         """Vote to skip a song. The requester can automatically skip.
         3 skip votes are needed for the song to be skipped.
         """
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         if not ctx.voice_state.is_playing:
             return await self.respond(ctx,embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！",color=0xff0000), reply=True)
 
@@ -621,7 +648,7 @@ class Music(commands.Cog):
         queue = ''
         for i, song in enumerate(ctx.voice_state.songs[start:end], start=start):
             if "local@" in song["url"]:
-                queue += '`{0}.` **{1}**\n'.format(i + 1, song["title"].replace("_", "\_"))
+                queue += '`{0}.` **{1}**\n'.format(i + 1, song["title"].replace("_", "\\_"))
             else:
                 queue += '`{0}.` [**{1[title]}**]({1[url]})\n'.format(i + 1, song)
 
@@ -631,9 +658,10 @@ class Music(commands.Cog):
     @commands.command(name='shuffle')
     async def _shuffle(self, ctx: commands.Context):
         """Shuffles the queue."""
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         if len(ctx.voice_state.songs) == 0:
-            await self.respond(ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！",color=0xff0000), reply=True)
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！",color=0xff0000), reply=True)
 
         ctx.voice_state.songs.shuffle()
         await self.respond(ctx, embed=discord.Embed(title=":cyclone: 已打亂所有等待播放的音樂排序！",color=0x1eff00), reply=True)
@@ -641,9 +669,12 @@ class Music(commands.Cog):
     @commands.command(name='remove')
     async def _remove(self, ctx: commands.Context, index: int):
         """Removes a song from the queue at a given index."""
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+        if ctx.voice_state.voice.channel != ctx.author.voice.channel:
+            return
         if len(ctx.voice_state.songs) == 0:
-            await self.respond(ctx,embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！",color=0xff0000), reply=True)
+            return await self.respond(ctx,embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！",color=0xff0000), reply=True)
 
         ctx.voice_state.songs.remove(index - 1)
         await self.respond(ctx,embed=discord.Embed(title=f":white_check_mark: 已刪除第`{index}`首歌！",color=0x1eff00), reply=True)
@@ -654,9 +685,10 @@ class Music(commands.Cog):
 
         Invoke this command again to unloop the song.
         """
-        if not ctx.voice_state:
-            return await self.respond(ctx,embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！",color=0xff0000), reply=True)
-
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+        if ctx.voice_state.voice.channel != ctx.author.voice.channel:
+            return
         # Inverse boolean value to loop and unloop.
         ctx.voice_state.loop = not ctx.voice_state.loop
         ctx.voice_state.ctx = ctx
@@ -675,7 +707,15 @@ class Music(commands.Cog):
 
         if not ctx.voice_state.voice:
             await ctx.invoke(self._join)
-        
+        if not ctx.voice_state.voice:
+            return
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+
+        if ctx.voice_client:
+            if ctx.voice_client.channel != ctx.author.voice.channel:
+                return await self.respond(ctx,embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！",color=0xff0000), reply=True)
+            
         loop = self.bot.loop
         try:
             await self.respond(ctx, '正在搜尋該曲目或網址：**{}**'.format(search))
@@ -753,9 +793,16 @@ class Music(commands.Cog):
         
     @commands.command(name='musicreload')
     async def musicreload(self, ctx):
-        await ctx.voice_state.stop()
+        try:
+            await ctx.voice_state.stop(leave=True)
+        except:
+            pass
         try:
             await ctx.voice_client.disconnect()
+        except:
+            pass
+        try:
+            await ctx.voice_client.clean_up()
         except:
             pass
         del self.voice_states[ctx.guild.id]
@@ -763,19 +810,28 @@ class Music(commands.Cog):
     
     @commands.command(name="loopqueue", aliases=['lq'])
     async def loopqueue(self, ctx):
-        if not ctx.voice_state:
-            return await self.respond(ctx, embed=discord.Embed(title=':x: 機器人並沒有連接到任何頻道！',color=0xff0000), reply=True)
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         
         ctx.voice_state.loopqueue = not ctx.voice_state.loopqueue
         # The current song will also loop if loop queue enabled
-        if ctx.voice_state.loopqueue:
-            await ctx.voice_state.songs.put({"url": ctx.voice_state.current.source.url, "title": ctx.voice_state.current.source.title})
-        await self.respond(ctx,"已" + ("啟用" if ctx.voice_state.loopqueue else "關閉") + "歌單循環")
+        try:
+            if ctx.voice_state.loopqueue:
+                await ctx.voice_state.songs.put({"url": ctx.voice_state.current.source.url, "title": ctx.voice_state.current.source.title})
+        except:
+            pass
+        await self.respond(ctx,embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loopqueue else "關閉") + "歌單循環", color=0x1eff00), reply=True)
     
     @commands.command(name="playfile", aliases=["pf"])
     async def playfile(self, ctx, *, title=None):
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+        if len(ctx.message.attachments) == 0:
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要提供一個檔案！", color=0xff0000), reply=True)
         if not ctx.voice_state.voice:
-            await ctx.invoke(self._join)
+            state = await ctx.invoke(self._join)
+            if state:
+                return
         import os
         if not os.path.isdir("./tempMusic"):
             os.mkdir("./tempMusic")
@@ -789,15 +845,17 @@ class Music(commands.Cog):
         await self.respond(ctx, embed=discord.Embed(title='已將歌曲 `{}` 加入至播放清單中'.format(title.replace("_", "\\_")),color=0x1eff00), reply=True)
         ctx.voice_state.stopped = False
 
-    @_join.before_invoke
-    @_play.before_invoke
-    async def ensure_voice_state(self, ctx: commands.Context):
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await self.respond(ctx,embed=discord.Embed(title=":x: 你需要先進入或指定一個語音頻道！",color=0xff0000), reply=True)
-
-        if ctx.voice_client:
-            if ctx.voice_client.channel != ctx.author.voice.channel:
-                await self.respond(ctx,embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！",color=0xff0000), reply=True)
+    @commands.command(name="runningservers", aliases=["rs"])
+    async def runningservers(self, ctx):
+        if ctx.author.id == self.bot.author_id:
+            server_count = 0
+            desc = ""
+            for voice_state in self.voice_states:
+                if self.voice_states[voice_state].voice:
+                    guild = self.bot.get_guild(voice_state)
+                    server_count += 1
+                    desc += guild.name + "\n"
+            return await self.respond(ctx, embed=discord.Embed(title="正在使用音樂機器人的伺服器: " + str(server_count), description=desc[:-1]))
 
 def setup(bot):
     bot.add_cog(Music(bot))
