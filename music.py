@@ -117,7 +117,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5):
         super().__init__(source, volume)
 
-        self.requester = ctx.author
+        self.requester = data.get('requester')
         self.channel = ctx.channel
         self.data = data
 
@@ -142,7 +142,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return '**{0.title}** by **{0.uploader}**'.format(self)
 
     @classmethod
-    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None):
+    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None):
         loop = loop or asyncio.get_event_loop()
 
         partial = functools.partial(self.ytdl.extract_info, search, download=False, process=False)
@@ -179,7 +179,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                     info = processed_info['entries'].pop(0)
                 except IndexError:
                     raise YTDLError('Couldn\'t retrieve any matches for `{}`'.format(webpage_url))
-
+        info["requester"] = requester
         return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
 
     @staticmethod
@@ -330,7 +330,7 @@ class VoiceState:
             if not isinstance(self.current, dict) and self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
-    async def create_song_source(self, ctx, url, title=None):
+    async def create_song_source(self, ctx, url, title=None, requester=None):
         if "local@" in url:
             # It is a local file
             url = url[6:]
@@ -338,9 +338,9 @@ class VoiceState:
                 duration = str(int(float(subprocess.check_output("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{}\"".format(url), shell=True).decode("ascii").replace("\r", "").replace("\n", ""))))
             except:
                 return "error"
-            return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url}), True)
+            return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
         else:
-           return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop))
+           return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester))
     
     async def audio_player_task(self):
         while True:
@@ -359,13 +359,13 @@ class VoiceState:
                         self.current = await self.songs.get()
                         # If the url contains local@, it is a local file
                         if "local@" in self.current["url"]:
-                            self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"])
+                            self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
                         else:
-                            self.current = await self.create_song_source(self._ctx, self.current["url"])
+                            self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
                         if self.current != "error":
                             # If loop queue, put the current song back to the end of the queue
                             if self.loopqueue:
-                                await self.songs.put({"url": self.current.source.url, "title": self.current.source.title})
+                                await self.songs.put({"url": self.current.source.url, "title": self.current.source.title, "user": self.current.source.requester})
                             self.skipped = False
                             self.stopped = False
                 except asyncio.TimeoutError:
@@ -379,9 +379,9 @@ class VoiceState:
                         async with timeout(180):  # 3 minutes
                             self.current = await self.songs.get()
                             if "local@" in self.current["url"]:
-                                self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"])
+                                self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
                             else:
-                                self.current = await self.create_song_source(self._ctx, self.current["url"])
+                                self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
                             if self.current != "error":
                                 self.skipped = False
                                 self.stopped = False
@@ -390,17 +390,18 @@ class VoiceState:
                         return
                 else:
                     if "local@" in self.current.source.url:
-                        self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title)
+                        self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
                     else:
-                        self.current = await self.create_song_source(self._ctx, self.current.source.url)
+                        self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current["user"])
             if self.current != "error":
                 self.current.source.volume = self._volume
                 self.voice.play(self.current.source, after=self.play_next_song)
                 self.current.starttime = time.time()
-                await self.current.source.channel.send(embed=self.current.create_embed("play"))
+                message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
                 # Create task for updating volume
                 self.bot.loop.create_task(self.update_volume())
                 await self.next.wait()
+                await message.delete()
 
     def play_next_song(self, error=None):
         if error:
@@ -419,9 +420,9 @@ class VoiceState:
     async def stop(self, leave=False):
         self.songs.clear()
         self.current = None
-        self.voice.stop()
-        if leave:
-            if self.voice:
+        if self.voice:
+            self.voice.stop()
+            if leave:
                 await self.voice.disconnect()
                 self.voice = None
         
@@ -736,7 +737,7 @@ class Music(commands.Cog):
                 playlist.sort(key=lambda song: song["pos"])
                 # Add all songs to the pending list
                 for songs, entry in enumerate(playlist):
-                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"]})
+                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author})
                 await self.respond(ctx,'Enqueued {} songs'.format(str(songs)))
                 #await self.respond(ctx, 'Took {} to finish'.format(time.time()-start_time))
             else:
@@ -745,7 +746,7 @@ class Music(commands.Cog):
                 data = await loop.run_in_executor(None, partial)
                 if "entries" in data:
                     data = data["entries"][0]
-                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"]})
+                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author})
                 await self.respond(ctx,'Enqueued {}'.format(data["title"]))
             ctx.voice_state.stopped = False
         except YTDLError as e:
@@ -776,7 +777,7 @@ class Music(commands.Cog):
             await message.add_reaction(reaction_list[x])
         
         def check(reaction, user):
-            return user == ctx.message.author and str(reaction.emoji) in reaction_list
+            return user == ctx.message.author and str(reaction.emoji) in reaction_list and reaction.message == message
 
         try:
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
@@ -790,6 +791,7 @@ class Music(commands.Cog):
             await self._play(ctx=ctx, search=result[reaction_list.index(reaction.emoji)]["url"])
 
         except asyncio.TimeoutError:
+            await message.edit(embed=discord.Embed(title="Timed out"))
             await self.respond(ctx, "Timed out, not receving any response...")
     
     @commands.command(name='musicreload')
@@ -818,7 +820,7 @@ class Music(commands.Cog):
         # The current song will also loop if loop queue enabled
         try:
             if ctx.voice_state.loopqueue:
-                await ctx.voice_state.songs.put({"url": ctx.voice_state.current.source.url, "title": ctx.voice_state.current.source.title})
+                await ctx.voice_state.songs.put({"url": ctx.voice_state.current.source.url, "title": ctx.voice_state.current.source.title, "user": ctx.voice_state.current.source.requester})
         except:
             pass
         await self.respond(ctx,("Enabled" if ctx.voice_state.loopqueue else "Disabled") + " queue looping")
@@ -842,7 +844,7 @@ class Music(commands.Cog):
         await ctx.message.attachments[0].save(filename)
         if not title:
             title = ctx.message.attachments[0].filename
-        await ctx.voice_state.songs.put({"url": "local@" + filename, "title": title})
+        await ctx.voice_state.songs.put({"url": "local@" + filename, "title": title, "user": ctx.author})
         await self.respond(ctx,'Enqueued {}'.format(title.replace("_", "\\_")))
         ctx.voice_state.stopped = False
     
