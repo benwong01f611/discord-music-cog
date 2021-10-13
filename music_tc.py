@@ -392,7 +392,7 @@ class VoiceState:
                     if "local@" in self.current.source.url:
                         self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
                     else:
-                        self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current["user"])
+                        self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
             if self.current != "error":
                 self.current.source.volume = self._volume
                 self.voice.play(self.current.source, after=self.play_next_song)
@@ -850,6 +850,8 @@ class Music(commands.Cog):
 
     @commands.command(name="runningservers", aliases=["rs"])
     async def runningservers(self, ctx):
+        # Warning: If bot.author_id is not set, this will not work,
+        # Therefore edit this line if needed
         if ctx.author.id == self.bot.author_id:
             server_count = 0
             desc = ""
