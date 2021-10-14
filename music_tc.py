@@ -179,7 +179,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                     info = processed_info['entries'].pop(0)
                 except IndexError:
                     raise YTDLError('找不到任何匹配的內容或項目：`{}`'.format(webpage_url))
-
+        info["requester"] = requester
         return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
 
     @staticmethod
@@ -639,7 +639,7 @@ class Music(commands.Cog):
         """
 
         if len(ctx.voice_state.songs) == 0:
-            await self.respond(ctx,embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！",color=0xff0000), reply=True)
+            return await self.respond(ctx,embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！",color=0xff0000), reply=True)
 
         items_per_page = 10
         pages = math.ceil(len(ctx.voice_state.songs) / items_per_page)
@@ -738,7 +738,7 @@ class Music(commands.Cog):
                 playlist.sort(key=lambda song: song["pos"])
                 # Add all songs to the pending list
                 for songs, entry in enumerate(playlist):
-                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"]})
+                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author})
                 await self.respond(ctx,embed=discord.Embed(title='已將 `{}` 首歌曲加入至播放清單中'.format(str(songs)),color=0x1eff00), reply=True)
             else:
                 # Just a normal song
@@ -746,7 +746,7 @@ class Music(commands.Cog):
                 data = await loop.run_in_executor(None, partial)
                 if "entries" in data:
                     data = data["entries"][0]
-                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"]})
+                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author})
                 await self.respond(ctx, embed=discord.Embed(title='已將歌曲 `{}` 加入至播放清單中'.format(data["title"]),color=0x1eff00), reply=True)
             ctx.voice_state.stopped = False
         except YTDLError as e:
@@ -844,7 +844,7 @@ class Music(commands.Cog):
         await ctx.message.attachments[0].save(filename)
         if not title:
             title = ctx.message.attachments[0].filename
-        await ctx.voice_state.songs.put({"url": "local@" + filename, "title": title})
+        await ctx.voice_state.songs.put({"url": "local@" + filename, "title": title, "user": ctx.author})
         await self.respond(ctx, embed=discord.Embed(title='已將歌曲 `{}` 加入至播放清單中'.format(title.replace("_", "\\_")),color=0x1eff00), reply=True)
         ctx.voice_state.stopped = False
 
