@@ -26,7 +26,7 @@ class YTDLError(Exception):
     pass
 
 class FFMPEGSource(discord.PCMVolumeTransformer):
-    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5):
+    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
         super().__init__(source, volume)
 
         self.requester = ctx.author
@@ -114,7 +114,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     ytdl = youtube_dl.YoutubeDL(YTDL_OPTIONS)
     ytdl_playlist = youtube_dl.YoutubeDL(YTDL_OPTIONS_PLAYLIST)
 
-    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5):
+    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
         super().__init__(source, volume)
 
         self.requester = data.get('requester')
@@ -142,7 +142,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return '**{0.title}** by **{0.uploader}**'.format(self)
 
     @classmethod
-    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None):
+    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None, seek=None):
         loop = loop or asyncio.get_event_loop()
 
         partial = functools.partial(self.ytdl.extract_info, search, download=False, process=False)
@@ -180,7 +180,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 except IndexError:
                     raise YTDLError('找不到任何匹配的內容或項目：`{}`'.format(webpage_url))
         info["requester"] = requester
-        return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
+        if seek is not None:
+            seek_option = self.FFMPEG_OPTIONS.copy()
+            seek_option['before_options'] += " -ss " + self.parse_duration_raw(seek)
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **seek_option), data=info)
+        else:
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
 
     @staticmethod
     def parse_duration(duration: int):
@@ -291,6 +296,7 @@ class VoiceState:
         self.pause_duration = 0.0
 
         self.loopqueue = False
+        self.seek = False
 
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
@@ -330,7 +336,7 @@ class VoiceState:
             if not isinstance(self.current, dict) and self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
-    async def create_song_source(self, ctx, url, title=None, requester=None):
+    async def create_song_source(self, ctx, url, title=None, requester=None, seek=None):
         if "local@" in url:
             # It is a local file
             url = url[6:]
@@ -338,9 +344,19 @@ class VoiceState:
                 duration = str(int(float(subprocess.check_output("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{}\"".format(url), shell=True).decode("ascii").replace("\r", "").replace("\n", ""))))
             except:
                 return "error"
-            return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
+            if seek is not None:
+                seek_option = YTDLSource.FFMPEG_OPTIONS.copy()
+                seek_option['before_options'] += " -ss " + YTDLSource.parse_duration_raw(seek)
+                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url, **seek_option), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}, seek=seek), True)
+            else:
+                return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
         else:
-           return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester))
+            if seek is not None:
+                seek_option = YTDLSource.FFMPEG_OPTIONS.copy()
+                seek_option['before_options'] += " -ss " + YTDLSource.parse_duration_raw(seek)
+                return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
+            else:
+                return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester,))
     
     async def audio_player_task(self):
         while True:
@@ -369,8 +385,7 @@ class VoiceState:
                             self.skipped = False
                             self.stopped = False
                 except asyncio.TimeoutError:
-                    await self.stop(leave=True)
-                    return
+                    return await self.stop(leave=True)
             else:
                 # Loop but skipped, proceed to next song and keep looping
                 if self.skipped or self.stopped:
@@ -386,8 +401,7 @@ class VoiceState:
                                 self.skipped = False
                                 self.stopped = False
                     except asyncio.TimeoutError:
-                        await self.stop(leave=True)
-                        return
+                        return await self.stop(leave=True)
                 else:
                     if "local@" in self.current.source.url:
                         self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
@@ -406,9 +420,15 @@ class VoiceState:
     def play_next_song(self, error=None):
         if error:
             raise VoiceError(str(error))
-        if not self.loop:
+        
+        if not self.loop and not self.seek:
             self.current = None
-        self.next.set()
+        if not self.seek:
+            self.next.set()
+        else:
+            self.current.source.volume = self._volume
+            self.voice.play(self.current.source, after=self.play_next_song)
+            self.current.starttime = time.time() - self.seek_time
 
     def skip(self):
         self.skip_votes.clear()
@@ -467,7 +487,7 @@ class Music(commands.Cog):
     def cog_unload(self):
         for state in self.voice_states.values():
             self.bot.loop.create_task(state.stop(leave=True))
-        for voicestate in self.voice_state:
+        for voicestate in self.voice_states:
             del self.voice_states[voicestate]
         shutil.rmtree("./tempMusic")
 
@@ -505,7 +525,7 @@ class Music(commands.Cog):
         ctx.voice_state.voice = await destination.connect()
         await self.respond(ctx, embed=discord.Embed(title=":white_check_mark: 機器人已進入頻道！",color=0x1eff00), reply=True)
 
-        if isinstance(ctx.author.voice.channel, discord.StageChannel):
+        if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
             try:
                 await asyncio.sleep(1)
                 await ctx.me.edit(suppress=False)
@@ -515,28 +535,40 @@ class Music(commands.Cog):
             shutil.rmtree("./tempMusic/" + str(ctx.guild.id))
 
     @commands.command(name='summon')
-    async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
+    async def _summon(self, ctx: commands.Context, *, channel=None):
         """Summons the bot to a voice channel.
 
         If no channel was specified, it joins your channel.
         """
-
         if not channel and not ctx.author.voice:
-            await self.respond(ctx, embed=discord.Embed(title=":x: 你必須指定或進入一個語音頻道！",color=0xff0000), reply=True)
-
-        destination = channel or ctx.author.voice.channel
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你必須指定或進入一個語音頻道！",color=0xff0000), reply=True)
+        
+        try:
+            channel_find = ctx.guild.get_channel(int(channel))
+        except:
+            try:
+                channel_find = ctx.guild.get_channel(int(channel[2:-1]))
+            except:
+                return await self.repsond(ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000), reply=True)
+        if channel_find is None:
+            return await self.repsond(ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000), reply=True)
+        if not ctx.author.guild_permissions.move_members:
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 只有擁有\"移動成員\"權限的用戶才能使用本指令！", color=0xff0000), reply=True)
+        
+        destination = channel_find or ctx.author.voice.channel
 
         # Check permission
         if not destination.permissions_for(ctx.me).connect:
             return await self.respond(ctx,embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！",color=0xff0000), reply=True)
         
         if ctx.voice_state.voice:
-            await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！",color=0x1eff00), reply=True)
             await ctx.voice_state.voice.move_to(destination)
+            msg = await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！",color=0x1eff00), reply=True)
+            ctx.voice_state.voice = msg.guild.voice_client
         else:
-            await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！",color=0x1eff00), reply=True)
             ctx.voice_state.voice = await destination.connect()
-        if isinstance(ctx.author.voice.channel, discord.StageChannel):
+            await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！",color=0x1eff00), reply=True)
+        if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
             try:
                 await asyncio.sleep(1)
                 await ctx.me.edit(suppress=False)
@@ -558,7 +590,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
 
     @commands.command(name='volume', aliases=['v'])
-    async def _volume(self, ctx: commands.Context, *, volume: int):
+    async def _volume(self, ctx: commands.Context, *, volume: int=None):
         """Sets the volume of the player."""
         if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
             return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
@@ -566,11 +598,14 @@ class Music(commands.Cog):
         if not ctx.voice_state:
             return await self.respond(ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！！",color=0xff0000), reply=True)
 
-        if 0 > volume or volume > 100:
-            return await self.respond(ctx, embed=discord.Embed(title=":x: 你只能設定`1~100`之間的音量！",color=0xff0000), reply=True)
+        if volume is not None:
+            if 0 > volume or volume > 100:
+                return await self.respond(ctx, embed=discord.Embed(title=":x: 你只能設定`1~100`之間的音量！",color=0xff0000), reply=True)
 
-        ctx.voice_state.volume = volume / 100
-        await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 已更改音樂音量至`{volume}`！",color=0x1eff00))
+            ctx.voice_state.volume = volume / 100
+            await self.respond(ctx, embed=discord.Embed(title=f":white_check_mark: 已更改音樂音量至`{volume}`！",color=0x1eff00))
+        else:
+            return await self.respond(ctx, "Current volume: {}%".format(int(ctx.voice_state.volume*100)))
 
     @commands.command(name='now', aliases=['current', 'playing'])
     async def _now(self, ctx: commands.Context):
@@ -777,7 +812,7 @@ class Music(commands.Cog):
             await message.add_reaction(reaction_list[x])
         
         def check(reaction, user):
-            return user == ctx.message.author and str(reaction.emoji) in reaction_list
+            return user == ctx.message.author and str(reaction.emoji) in reaction_list and reaction.message == message
 
         try:
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
@@ -799,11 +834,11 @@ class Music(commands.Cog):
         try:
             await ctx.voice_state.stop(leave=True)
         except:
-            pass
+            await self.respond(ctx, "Unable to stop playing music.")
         try:
-            await ctx.voice_client.disconnect()
+            await ctx.guild.voice_client.disconnect()
         except:
-            pass
+            await self.respond(ctx, "Unable to leave the channel.")
         try:
             await ctx.voice_client.clean_up()
         except:
@@ -861,6 +896,28 @@ class Music(commands.Cog):
                     server_count += 1
                     desc += guild.name + "\n"
             return await self.respond(ctx, embed=discord.Embed(title="正在使用音樂機器人的伺服器: " + str(server_count), description=desc[:-1]))
+
+    @commands.command(name="seek")
+    async def seek(self, ctx, seconds:int = None):
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+        if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
+            if seconds is None:
+                return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要輸入跳轉的秒數！", color=0xff0000), reply=True)
+            if seconds < 0:
+                return await self.respond(ctx, embed=discord.Embed(title=":x: 秒數不能為負數！", color=0xff0000), reply=True)
+            ctx.voice_state.seek = True
+            ctx.voice_state.seek_time = seconds
+            current = ctx.voice_state.current
+            if "local@" in current.source.url:
+                ctx.voice_state.current = await ctx.voice_state.create_song_source(ctx, current.source.url, title=current.source.title, requester=current.source.requester, seek=seconds)
+            else:
+                ctx.voice_state.current = await ctx.voice_state.create_song_source(ctx, current.source.url, requester=current.source.requester, seek=seconds)
+            ctx.voice_state.voice.stop()
+            await self.respond(ctx,embed=discord.Embed(title=f":fast_forward: 已跳轉至{seconds}秒！",color=0x1eff00), reply=True)
+            ctx.voice_state.seek = False
+        else:
+            await self.respond(ctx,embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！",color=0xff0000), reply=True)
 
 def setup(bot):
     bot.add_cog(Music(bot))

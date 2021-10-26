@@ -1,0 +1,54 @@
+v1.5.0
+- Added command "seek" to seek to a specific position in seconds
+- Fixed command "summon" can be used by anybody
+- Fixed command "summon" not updating interal data
+
+v1.4.4
+- Fixed music not playing in tc version
+
+v1.4.3
+- Fixed looping does not work
+- Added remarks for runningservers
+
+v1.4.2
+- Fixed wrong requester in command "now" and the embed message sent before playing songs
+- Fixed a bug related to stopping a NoneType voice client
+- Fixed command "search" does not check which message has added reaction
+
+v1.4.1
+- Fixed command "stop" not working
+
+v1.4.0
+- Added command "runningservers" to view servers running music bot
+- Fixed being able to control the music bot even if the user is not in the (same) voice channel
+
+v1.3.0
+- Added "playfile" command
+
+v1.2.2
+- "loop", "loopqueue", "volume" can now be used when the bot is in a voice channel rather than it is playing something
+- Plays playlist only if the URL contains "/playlist"
+
+v1.2.1
+- Fixed loop not working
+
+v1.2.0
+- Reworked song queue to store URL and title only, as queuing a large number of songs will cause lag (originally it stores FFMPEG object)
+- Plays playlist only if the URL is like "https://www.youtube.com/playlist?list="
+
+
+v1.1.1
+- Removed debug messages
+
+v1.1.0
+- Added command "loopqueue" to loop current queue
+- Added command "musicreload" to reload the music bot in single server
+
+v1.0.1
+- Become speaker automatically in stage channel (if the bot has the permission to mute members)
+- Command "now" shows the position of the song
+- Setting new volume will have immediate effect instead of waiting for next song
+- After the bot timed out (not getting any songs for 3 minutes), it will recreate the background task loop for checking queue
+
+v1.0.0
+- Initial commit

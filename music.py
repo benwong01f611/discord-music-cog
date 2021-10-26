@@ -26,7 +26,7 @@ class YTDLError(Exception):
     pass
 
 class FFMPEGSource(discord.PCMVolumeTransformer):
-    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5):
+    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
         super().__init__(source, volume)
 
         self.requester = ctx.author
@@ -114,7 +114,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     ytdl = youtube_dl.YoutubeDL(YTDL_OPTIONS)
     ytdl_playlist = youtube_dl.YoutubeDL(YTDL_OPTIONS_PLAYLIST)
 
-    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5):
+    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
         super().__init__(source, volume)
 
         self.requester = data.get('requester')
@@ -142,7 +142,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return '**{0.title}** by **{0.uploader}**'.format(self)
 
     @classmethod
-    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None):
+    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None, seek=None):
         loop = loop or asyncio.get_event_loop()
 
         partial = functools.partial(self.ytdl.extract_info, search, download=False, process=False)
@@ -180,7 +180,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 except IndexError:
                     raise YTDLError('Couldn\'t retrieve any matches for `{}`'.format(webpage_url))
         info["requester"] = requester
-        return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
+        if seek is not None:
+            seek_option = self.FFMPEG_OPTIONS.copy()
+            seek_option['before_options'] += " -ss " + self.parse_duration_raw(seek)
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **seek_option), data=info)
+        else:
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
 
     @staticmethod
     def parse_duration(duration: int):
@@ -291,6 +296,7 @@ class VoiceState:
         self.pause_duration = 0.0
 
         self.loopqueue = False
+        self.seek = False
 
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
@@ -330,7 +336,7 @@ class VoiceState:
             if not isinstance(self.current, dict) and self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
-    async def create_song_source(self, ctx, url, title=None, requester=None):
+    async def create_song_source(self, ctx, url, title=None, requester=None, seek=None):
         if "local@" in url:
             # It is a local file
             url = url[6:]
@@ -338,14 +344,23 @@ class VoiceState:
                 duration = str(int(float(subprocess.check_output("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{}\"".format(url), shell=True).decode("ascii").replace("\r", "").replace("\n", ""))))
             except:
                 return "error"
-            return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
+            if seek is not None:
+                seek_option = YTDLSource.FFMPEG_OPTIONS.copy()
+                seek_option['before_options'] += " -ss " + YTDLSource.parse_duration_raw(seek)
+                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url, **seek_option), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}, seek=seek), True)
+            else:
+                return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
         else:
-           return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester))
+            if seek is not None:
+                seek_option = YTDLSource.FFMPEG_OPTIONS.copy()
+                seek_option['before_options'] += " -ss " + YTDLSource.parse_duration_raw(seek)
+                return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
+            else:
+                return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester,))
     
     async def audio_player_task(self):
         while True:
             self.next.clear()
-
             if not self.loop:
                 # Try to get the next song within 3 minutes.
                 # If no song will be added to the queue in time,
@@ -369,8 +384,7 @@ class VoiceState:
                             self.skipped = False
                             self.stopped = False
                 except asyncio.TimeoutError:
-                    await self.stop(leave=True)
-                    return
+                    return await self.stop(leave=True)
             else:
                 # Loop but skipped, proceed to next song and keep looping
                 if self.skipped or self.stopped:
@@ -386,8 +400,7 @@ class VoiceState:
                                 self.skipped = False
                                 self.stopped = False
                     except asyncio.TimeoutError:
-                        await self.stop(leave=True)
-                        return
+                        return await self.stop(leave=True)
                 else:
                     if "local@" in self.current.source.url:
                         self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
@@ -407,9 +420,14 @@ class VoiceState:
         if error:
             raise VoiceError(str(error))
         
-        if not self.loop:
+        if not self.loop and not self.seek:
             self.current = None
-        self.next.set()
+        if not self.seek:
+            self.next.set()
+        else:
+            self.current.source.volume = self._volume
+            self.voice.play(self.current.source, after=self.play_next_song)
+            self.current.starttime = time.time() - self.seek_time
 
     def skip(self):
         self.skip_votes.clear()
@@ -468,7 +486,7 @@ class Music(commands.Cog):
     def cog_unload(self):
         for state in self.voice_states.values():
             self.bot.loop.create_task(state.stop(leave=True))
-        for voicestate in self.voice_state:
+        for voicestate in self.voice_states:
             del self.voice_states[voicestate]
         shutil.rmtree("./tempMusic")
 
@@ -506,37 +524,49 @@ class Music(commands.Cog):
         ctx.voice_state.voice = await destination.connect()
         await self.respond(ctx, "Joined **{}**.".format(destination))
         
-        if isinstance(ctx.author.voice.channel, discord.StageChannel):
+        if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
             try:
                 await asyncio.sleep(1)
                 await ctx.me.edit(suppress=False)
             except:
-                await self.respond(ctx, "I have no permission to speak! Please invite me to speak")
+                await self.respond(ctx, "I have no permission to speak! Please invite me to speak.")
         if os.path.isdir("./tempMusic/" + str(ctx.guild.id)):
             shutil.rmtree("./tempMusic/" + str(ctx.guild.id))
 
     @commands.command(name='summon')
-    async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
+    async def _summon(self, ctx: commands.Context, *, channel=None):
         """Summons the bot to a voice channel.
         If no channel was specified, it joins your channel.
         """
-
         if not channel and not ctx.author.voice:
             return await self.respond(ctx, 'You are neither connected to a voice channel nor specified a channel to join.')
 
-        destination = channel or ctx.author.voice.channel
+        try:
+            channel_find = ctx.guild.get_channel(int(channel))
+        except:
+            try:
+                channel_find = ctx.guild.get_channel(int(channel[2:-1]))
+            except:
+                return await self.respond(ctx, "Unable to find the specific channel.")
+        if channel_find is None:
+            return await self.respond(ctx, "Unable to find the specific channel.")
+        if not ctx.author.guild_permissions.move_members:
+            return await self.respond(ctx, "Only members with \"Move Member\" permission are allowed to use this command.")
+        
+        destination = channel_find or ctx.author.voice.channel
 
         # Check permission
         if not destination.permissions_for(ctx.me).connect:
             return await self.respond(ctx, "No permission to join the voice channel!")
 
         if ctx.voice_state.voice:
-            await self.respond(ctx, "Switched from **{}** to **{}**.".format(ctx.voice_state.voice.channel.name, destination.name))
             await ctx.voice_state.voice.move_to(destination)
+            msg = await self.respond(ctx, "Switched from **{}** to **{}**.".format(ctx.voice_state.voice.channel.name, destination.name))
+            ctx.voice_state.voice = msg.guild.voice_client
         else:
-            await self.respond(ctx, "Joined **{}**.".format(destination.name))
             ctx.voice_state.voice = await destination.connect()
-        if isinstance(ctx.author.voice.channel, discord.StageChannel):
+            msg = await self.respond(ctx, "Joined **{}**.".format(destination.name))
+        if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
             try:
                 await asyncio.sleep(1)
                 await ctx.me.edit(suppress=False)
@@ -558,7 +588,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
 
     @commands.command(name='volume', aliases=['v'])
-    async def _volume(self, ctx: commands.Context, *, volume: int):
+    async def _volume(self, ctx: commands.Context, *, volume: int=None):
         """Sets the volume of the player."""
         if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
             return await self.respond(ctx, "You are not connected to any voice channel or the same voice channel.")
@@ -566,11 +596,14 @@ class Music(commands.Cog):
         if not ctx.voice_state:
             return await self.respond(ctx,'Not connected to any voice channel')
 
-        if 0 > volume or volume > 100:
-            return await self.respond(ctx, 'Volume must be between 0 and 100')
+        if volume is not None:
+            if 0 > volume or volume > 100:
+                return await self.respond(ctx, 'Volume must be between 0 and 100')
 
-        ctx.voice_state.volume = volume / 100
-        await self.respond(ctx, 'Volume of the player set to {}%'.format(volume))
+            ctx.voice_state.volume = volume / 100
+            await self.respond(ctx, 'Volume of the player set to {}%'.format(volume))
+        else:
+            return await self.respond(ctx, "Current volume: {}%".format(int(ctx.voice_state.volume*100)))
 
     @commands.command(name='now', aliases=['current', 'playing'])
     async def _now(self, ctx: commands.Context):
@@ -799,11 +832,11 @@ class Music(commands.Cog):
         try:
             await ctx.voice_state.stop(leave=True)
         except:
-            pass
+            await self.respond(ctx, "Unable to stop playing music.")
         try:
-            await ctx.voice_client.disconnect()
+            await ctx.guild.voice_client.disconnect()
         except:
-            pass
+            await self.respond(ctx, "Unable to leave the channel.")
         try:
             await ctx.voice_client.clean_up()
         except:
@@ -862,5 +895,27 @@ class Music(commands.Cog):
                     desc += guild.name + "\n"
             return await self.respond(ctx, embed=discord.Embed(title="Servers running music bot: " + str(server_count), description=desc[:-1]))
 
+    @commands.command(name="seek")
+    async def seek(self, ctx, seconds:int = None):
+        if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+            return await self.respond(ctx, "You are not connected to any voice channel or the same voice channel.")
+        if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
+            if seconds is None:
+                return await self.respond(ctx, "Please provide seconds to seek to!")
+            if seconds < 0:
+                return await self.respond(ctx, "Seconds cannot be negative!")
+            ctx.voice_state.seek = True
+            ctx.voice_state.seek_time = seconds
+            current = ctx.voice_state.current
+            if "local@" in current.source.url:
+                ctx.voice_state.current = await ctx.voice_state.create_song_source(ctx, current.source.url, title=current.source.title, requester=current.source.requester, seek=seconds)
+            else:
+                ctx.voice_state.current = await ctx.voice_state.create_song_source(ctx, current.source.url, requester=current.source.requester, seek=seconds)
+            ctx.voice_state.voice.stop()
+            await self.respond(ctx, "Seeked to {}s".format(seconds))
+            ctx.voice_state.seek = False
+        else:
+            await self.respond(ctx, "There is no songs playing right now.")
+        
 def setup(bot):
     bot.add_cog(Music(bot))
