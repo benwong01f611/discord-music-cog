@@ -39,7 +39,7 @@ class FFMPEGSource(discord.PCMVolumeTransformer):
         self.duration_int = int(data.get('duration'))
 
     def __str__(self):
-        return '**{0.title}** by **{0.uploader}**'.format(self)
+        return '**{0.title}**'.format(self)
 
     @staticmethod
     def parse_duration(duration: int):
@@ -296,13 +296,10 @@ class VoiceState:
         self.pause_duration = 0.0
 
         self.loopqueue = False
-        self.seek = False
+        self.seeking = False
 
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
-
-    def ffmpegsource(self, path):
-        return discord.FFmpegPCMAudio(path)
 
     def __del__(self):
         self.audio_player.cancel()
@@ -327,6 +324,17 @@ class VoiceState:
     def is_playing(self):
         return self.voice and self.current
 
+    async def seek(self, seconds, isLocal):
+        if isLocal:
+            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, seek=seconds)
+        else:
+            self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester, seek=seconds)
+        self.current.source.volume = self._volume
+        self.voice.stop()
+        self.voice.play(self.current.source, after=self.play_next_song)
+        self.current.starttime = time.time() - self.seek_time
+        self.bot.loop.create_task(self.update_volume())
+
     async def update_volume(self):
         # If it is not playing, dont check
         while self.is_playing:
@@ -345,19 +353,12 @@ class VoiceState:
             except:
                 return "error"
             if seek is not None:
-                seek_option = YTDLSource.FFMPEG_OPTIONS.copy()
-                seek_option['before_options'] += " -ss " + YTDLSource.parse_duration_raw(seek)
-                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url, **seek_option), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}, seek=seek), True)
+                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url, before_options="-ss " + YTDLSource.parse_duration_raw(seek)), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}, seek=seek), True)
             else:
-                return Song(FFMPEGSource(ctx, self.ffmpegsource(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
+                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
         else:
-            if seek is not None:
-                seek_option = YTDLSource.FFMPEG_OPTIONS.copy()
-                seek_option['before_options'] += " -ss " + YTDLSource.parse_duration_raw(seek)
-                return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
-            else:
-                return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester,))
-    
+            return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
+
     async def audio_player_task(self):
         while True:
             self.next.clear()
@@ -418,16 +419,13 @@ class VoiceState:
 
     def play_next_song(self, error=None):
         if error:
-            raise VoiceError(str(error))
-        
-        if not self.loop and not self.seek:
+            print(error)
+        if not self.loop and not self.seeking:
             self.current = None
-        if not self.seek:
+        if not self.seeking:
             self.next.set()
         else:
-            self.current.source.volume = self._volume
-            self.voice.play(self.current.source, after=self.play_next_song)
-            self.current.starttime = time.time() - self.seek_time
+            self.seeking = False
 
     def skip(self):
         self.skip_votes.clear()
@@ -443,7 +441,6 @@ class VoiceState:
             if leave:
                 await self.voice.disconnect()
                 self.voice = None
-        
 
 class Music(commands.Cog):
     async def respond(self, ctx: commands.Context, message: str=None, embed: discord.Embed=None, reply: bool=False):
@@ -486,9 +483,13 @@ class Music(commands.Cog):
     def cog_unload(self):
         for state in self.voice_states.values():
             self.bot.loop.create_task(state.stop(leave=True))
-        for voicestate in self.voice_states:
+        voice_states = self.voice_states.keys()
+        for voicestate in voice_states:
             del self.voice_states[voicestate]
-        shutil.rmtree("./tempMusic")
+        try:
+            shutil.rmtree("./tempMusic")
+        except:
+            pass
 
     def cog_check(self, ctx: commands.Context):
         if not ctx.guild:
@@ -804,7 +805,7 @@ class Music(commands.Cog):
                                 color=discord.Color.green())
         for count, entry in enumerate(result):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[Link]({entry["url"]})' + "\nDuration: " + entry["duration"] + "\n", inline=False)
-        message = await self.respond(ctx,embed=embed)
+        message = await self.respond(ctx, embed=embed)
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         for x in range(count + 1):
             await message.add_reaction(reaction_list[x])
@@ -904,16 +905,11 @@ class Music(commands.Cog):
                 return await self.respond(ctx, "Please provide seconds to seek to!")
             if seconds < 0:
                 return await self.respond(ctx, "Seconds cannot be negative!")
-            ctx.voice_state.seek = True
+            ctx.voice_state.seeking = True
             ctx.voice_state.seek_time = seconds
             current = ctx.voice_state.current
-            if "local@" in current.source.url:
-                ctx.voice_state.current = await ctx.voice_state.create_song_source(ctx, current.source.url, title=current.source.title, requester=current.source.requester, seek=seconds)
-            else:
-                ctx.voice_state.current = await ctx.voice_state.create_song_source(ctx, current.source.url, requester=current.source.requester, seek=seconds)
-            ctx.voice_state.voice.stop()
+            await ctx.voice_state.seek(seconds, "local@" in current.source.url)
             await self.respond(ctx, "Seeked to {}s".format(seconds))
-            ctx.voice_state.seek = False
         else:
             await self.respond(ctx, "There is no songs playing right now.")
         

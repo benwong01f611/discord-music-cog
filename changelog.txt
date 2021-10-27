@@ -1,3 +1,7 @@
+v1.5.1
+- Fixed command "seek" not working for uploaded files
+- Fixed an exception caused by deleting internal data while reloading bot
+
 v1.5.0
 - Added command "seek" to seek to a specific position in seconds
 - Fixed command "summon" can be used by anybody
