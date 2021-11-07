@@ -1,3 +1,9 @@
+v1.5.2
+- Removed message sent from command "musicreload"
+- Command "seek" can now seek backward or forward by adding minus sign "-" or plus sign "+". e.g "-seek +1"
+- Command "seek" can now parse the duration string. e.g. "-seek 1h2m3s" = seek 3663
+- Added variable "authors" to store author lists which allows them to use command "runningservers"
+
 v1.5.1
 - Fixed command "seek" not working for uploaded files
 - Fixed an exception caused by deleting internal data while reloading bot

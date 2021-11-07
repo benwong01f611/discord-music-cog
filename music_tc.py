@@ -13,10 +13,13 @@ from discord.ext import commands
 
 import subprocess
 import shutil
+import re
 
 # Silence useless bug reports messages
 youtube_dl.utils.bug_reports_message = lambda: ''
 
+# Insert authors' id in here, user in this set are allowed to use command "runningservers"
+authors = ()
 
 class VoiceError(Exception):
     pass
@@ -834,11 +837,11 @@ class Music(commands.Cog):
         try:
             await ctx.voice_state.stop(leave=True)
         except:
-            await self.respond(ctx, "Unable to stop playing music.")
+            pass
         try:
             await ctx.guild.voice_client.disconnect()
         except:
-            await self.respond(ctx, "Unable to leave the channel.")
+            pass
         try:
             await ctx.voice_client.clean_up()
         except:
@@ -885,9 +888,7 @@ class Music(commands.Cog):
 
     @commands.command(name="runningservers", aliases=["rs"])
     async def runningservers(self, ctx):
-        # Warning: If bot.author_id is not set, this will not work,
-        # Therefore edit this line if needed
-        if ctx.author.id == self.bot.author_id:
+        if ctx.author.id in authors:
             server_count = 0
             desc = ""
             for voice_state in self.voice_states:
@@ -898,19 +899,44 @@ class Music(commands.Cog):
             return await self.respond(ctx, embed=discord.Embed(title="正在使用音樂機器人的伺服器: " + str(server_count), description=desc[:-1]))
 
     @commands.command(name="seek")
-    async def seek(self, ctx, seconds:int = None):
+    async def seek(self, ctx, seconds=None):
         if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
             return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
+            try:
+                regexp = re.compile("([0-9]*)h?([0-9]*)m?([0-9]*)s?")
+                if regexp.match(seconds).group() != "":
+                    hour_regexp = re.compile("([0-9]+h)").search(seconds)
+                    hour_regexp = int(hour_regexp.group()[0:-1]) if hour_regexp is not None else 0
+
+                    minute_regexp = re.compile("([0-9]+m)").search(seconds)
+                    minute_regexp = int(minute_regexp.group()[0:-1]) if minute_regexp is not None else 0
+
+                    second_regexp = re.compile("([0-9]+s)").search(seconds)
+                    second_regexp = int(second_regexp.group()[0:-1]) if second_regexp is not None else 0
+
+                    seconds = hour_regexp * 60 * 60 + minute_regexp * 60 + second_regexp
+                elif seconds[0] == "+":
+                    if ctx.voice_state.current.paused:
+                        ctx.voice_state.current.pause_duration += time.time() - ctx.voice_state.current.pause_time
+                        ctx.voice_state.current.pause_time = time.time()
+                    seconds = int(time.time() - ctx.voice_state.current.starttime - ctx.voice_state.current.pause_duration) + int(seconds[1:])
+                elif seconds[0] == "-":
+                    if ctx.voice_state.current.paused:
+                        ctx.voice_state.current.pause_duration += time.time() - ctx.voice_state.current.pause_time
+                        ctx.voice_state.current.pause_time = time.time()
+                    seconds = max((int(time.time() - ctx.voice_state.current.starttime - ctx.voice_state.current.pause_duration) - int(seconds[1:])), 0)
+                else:
+                    seconds = int(seconds)
+            except:
+                return await self.respond(ctx, embed=discord.Embed(title=":x: 無法抓取跳轉的秒數！", color=0xff0000), reply=True)
             if seconds is None:
                 return await self.respond(ctx, embed=discord.Embed(title=":x: 你需要輸入跳轉的秒數！", color=0xff0000), reply=True)
-            if seconds < 0:
-                return await self.respond(ctx, embed=discord.Embed(title=":x: 秒數不能為負數！", color=0xff0000), reply=True)
             ctx.voice_state.seeking = True
             ctx.voice_state.seek_time = seconds
             current = ctx.voice_state.current
             await ctx.voice_state.seek(seconds, "local@" in current.source.url)
-            await self.respond(ctx, "Seeked to {}s".format(seconds))
+            await self.respond(ctx,embed=discord.Embed(title=f":fast_forward: 已跳轉至{seconds}秒！",color=0x1eff00), reply=True)
         else:
             await self.respond(ctx,embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！",color=0xff0000), reply=True)
 
