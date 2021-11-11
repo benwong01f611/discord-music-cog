@@ -300,6 +300,12 @@ class VoiceState:
 
         self.loopqueue = False
         self.seeking = False
+        self.guild_id = ctx.guild.id
+
+        self.voice_state_updater = bot.loop.create_task(self.update_voice_state())
+        self.timer = 0
+        self.volume_updater = None
+        self.listener_task = None
 
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
@@ -362,6 +368,30 @@ class VoiceState:
         else:
             return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
 
+    async def check_user_listening(self):
+        while True:
+            await asyncio.sleep(1)
+            if self.voice and len(self.voice.channel.members) == 1:
+                self.timer = 0
+                while self.timer != 180:
+                    await asyncio.sleep(1)
+                    self.timer += 1
+                    if len(self.voice.channel.members) > 1:
+                        break
+                if len(self.voice.channel.members) == 1:
+                    await self.stop(leave=True)
+                    break
+                
+    async def update_voice_state(self):
+        await asyncio.sleep(3)
+        while self.voice:
+            await asyncio.sleep(1)
+            guild = self.bot.get_guild(self.guild_id)
+            if guild is None:
+                print("[ERROR] Couldn't retrieve guild " + str(self.guild_id))
+            else:
+                self.voice = guild.voice_client
+
     async def audio_player_task(self):
         while True:
             self.next.clear()
@@ -416,7 +446,8 @@ class VoiceState:
                 self.current.starttime = time.time()
                 message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
                 # Create task for updating volume
-                self.bot.loop.create_task(self.update_volume())
+                self.volume_updater = self.bot.loop.create_task(self.update_volume())
+                self.listener_task = self.bot.loop.create_task(self.check_user_listening())
                 await self.next.wait()
                 await message.delete()
 
@@ -486,6 +517,10 @@ class Music(commands.Cog):
     def cog_unload(self):
         for state in self.voice_states.values():
             self.bot.loop.create_task(state.stop(leave=True))
+            state.volume_updater.cancel()
+            state.listener_task.cancel()
+            state.audio_player.cancel()
+            state.voice_state_updater.cancel()
         voice_states = self.voice_states.keys()
         for voicestate in voice_states:
             del self.voice_states[voicestate]
@@ -517,6 +552,9 @@ class Music(commands.Cog):
         if ctx.voice_client:
             if ctx.voice_client.channel != ctx.author.voice.channel:
                 await self.respond(ctx, "Bot is already in a voice channel.")
+                return False
+            else:
+                await self.respond(ctx, "Bot is already in your voice channel.")
                 return False
         
         destination = ctx.author.voice.channel
@@ -627,7 +665,7 @@ class Music(commands.Cog):
             ctx.voice_state.current.pause_time = time.time()
             ctx.voice_state.current.paused = True
         else:
-            await self.respond(ctx, "There is no songs playing right now.")
+            await self.respond(ctx, "There is no songs playing right now or the music is already paused.")
 
     @commands.command(name='resume', aliases=['r'])
     async def _resume(self, ctx: commands.Context):
@@ -894,7 +932,7 @@ class Music(commands.Cog):
                 if self.voice_states[voice_state].voice:
                     guild = self.bot.get_guild(voice_state)
                     server_count += 1
-                    desc += guild.name + "\n"
+                    desc += guild.name + "/ " + voice_state + "\n"
             return await self.respond(ctx, embed=discord.Embed(title="Servers running music bot: " + str(server_count), description=desc[:-1]))
 
     @commands.command(name="seek")
@@ -903,7 +941,7 @@ class Music(commands.Cog):
             return await self.respond(ctx, "You are not connected to any voice channel or the same voice channel.")
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             try:
-                regexp = re.compile("([0-9]*)h?([0-9]*)m?([0-9]*)s?")
+                regexp = re.compile("([0-9]*h)?([0-9]*m)?([0-9]*s)?")
                 if regexp.match(seconds).group() != "":
                     hour_regexp = re.compile("([0-9]+h)").search(seconds)
                     hour_regexp = int(hour_regexp.group()[0:-1]) if hour_regexp is not None else 0
@@ -939,6 +977,104 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx, "There is no songs playing right now.")
     
+    @commands.command(name="musicdebug")
+    async def musicdebug(self, ctx, guildid=None, options=None, *, args=None):
+        if ctx.author.id in authors:
+            guild = None
+            if guildid == "here":
+                guild = ctx.guild
+                guildid = ctx.guild.id
+            elif guildid == "help":
+                return await self.respond(ctx, "Usage: musicdebug <guildid> <options> <args>\nOptions:\n    None: Display Voice State details\n    \"queue\": Display queue\n        args: page number\n    \"song\": Display song details\n    \"channel\": Display connected channel details\n        args: \"permission\": View permissions of the voice channel\n    \"reload\": Perform musicreload on that server")
+            else:
+                if guildid is not None:
+                    try:
+                        guild = self.bot.get_guild(int(guildid))
+                    except:
+                        pass
+            if guild is None:
+                return await self.respond(ctx, "Guild {} not found!".format(guildid))
+            voice_state = self.voice_states[int(guildid)]
+            if options is None:
+                embed = discord.Embed(title="Server details - {}".format(guild.name))
+                embed.add_field(name="Voice Channel Name", value="None" if guild.voice_client is None else guild.voice_client.channel.name, inline=False)
+                embed.add_field(name="Voice Channel ID", value="None" if guild.voice_client is None else guild.voice_client.channel.id, inline=False)
+                embed.add_field(name="Latency", value="None" if guild.voice_client is None else f"{guild.voice_client.latency*1000} ms", inline=False)
+                embed.add_field(name="Average Latency (20 HEARTBEAT)", value="None" if guild.voice_client is None else f"{guild.voice_client.average_latency*1000} ms", inline=False)
+                embed.add_field(name="Current Song", value=voice_state.current, inline=False)
+                embed.add_field(name="Number of Songs in Queue", value=len(voice_state.songs), inline=False)
+                embed.add_field(name="Loop", value=voice_state._loop, inline=False)
+                embed.add_field(name="Loop Queue", value=voice_state.loopqueue, inline=False)
+                embed.add_field(name="Paused", value="None" if voice_state.current is None else voice_state.current.paused, inline=False)
+                embed.add_field(name="Volume", value=str(voice_state._volume * 100) + "%", inline=False)
+                embed.add_field(name="Duration of no user in voice channel", value=f"{voice_state.timer} s")
+                return await self.respond(ctx, embed=embed)
+            elif options == "queue":
+                items_per_page = 5
+                pages = math.ceil(len(voice_state.songs) / items_per_page)
+                if args is None:
+                    page = 1
+                else:
+                    page = int(args)
+                start = (page - 1) * items_per_page
+                end = start + items_per_page
+                embed = discord.Embed(title=f"Song queue: {len(voice_state.songs)} songs, Page {page}/{pages}")
+                for i, song in enumerate(voice_state.songs[start:end], start=start):
+                    song_compact = song.copy()
+                    song_compact["user"] = {"username": song_compact["user"].name + "#" + song_compact["user"].discriminator, "id": song_compact["user"].id}
+                    embed.add_field(name=i, value=song_compact, inline=False)
+                return await self.respond(ctx, embed=embed)
+            elif options == "song":
+                embed = discord.Embed(title="Current Song")
+                if voice_state.current is None:
+                    embed.description = "No song"
+                else:
+                    song = voice_state.current
+                    embed.add_field(name="Title", value=song.source.title, inline=False)
+                    embed.add_field(name="Requester", value=song.requester.mention, inline=False)
+                    embed.add_field(name="Progress", value=YTDLSource.parse_duration_raw(int(time.time() - song.starttime - song.pause_duration)), inline=False)
+                    embed.add_field(name="Duration", value=song.source.duration_raw, inline=False)
+                    embed.add_field(name="URL", value=song.source.url, inline=False)
+                    embed.add_field(name="Is File", value=song.isFile, inline=False)
+                return await self.respond(ctx, embed=embed)
+            elif options == "channel":
+                if voice_state.voice:
+                    channel = voice_state.voice.channel
+                    if args is not None:
+                        if args == "permissions":
+                            permissions = channel.permissions_for(ctx.me)
+                            attributes = ["add_reactions", "administrator", "attach_files", "ban_members", "change_nickname", "connect", "create_instant_invite", "create_private_threads", "create_public_threads", "deafen_members", "embed_links", "external_emojis", "external_stickers", "kick_members", "manage_channels", "manage_emojis", "manage_emojis_and_stickers", "manage_events", "manage_guild", "manage_messages", "manage_nicknames", "manage_permissions", "manage_roles", "manage_threads", "manage_webhooks", "mention_everyone", "move_members", "mute_members", "priority_speaker", "read_message_history", "read_messages", "request_to_speak", "send_messages", "send_messages_in_threads", "send_tts_messages", "speak", "start_embedded_activities", "stream", "use_external_emojis", "use_external_stickers", "use_slash_commands", "use_voice_activation", "view_audit_log", "view_channel", "view_guild_insights"]
+                            desc = ""
+                            for attribute in attributes:
+                                desc += attribute + ": " + (str(getattr(permissions, attribute)) if hasattr(permissions, attribute) else "?")
+                                desc += "\n"
+                            embed = discord.Embed(title=f"Permissions of Channel {channel.name}", description=f"ID: {channel.id}")
+                            embed.add_field(name="Permission List", value=desc, inline=False)
+                    else:
+                        embed = discord.Embed(title=f"Channel {channel.name}", description=f"ID: {channel.id}")
+                        embed.add_field(name="Bitrate", value=channel.bitrate, inline=False)
+                        members = []
+                        for member in channel.members:
+                            members.append(str({"id": member.id, "name": member.name + "#" + member.discriminator}))
+                        memberstr = "\n".join(members)
+                        embed.add_field(name="Members", value=memberstr, inline=False)
+                        embed.add_field(name="User limit", value=channel.user_limit, inline=False)
+                        embed.add_field(name="Permissions for bot", value="Add parameter \"permissions\" to view permissions", inline=False)
+                    await self.respond(ctx, embed=embed)
+                else:
+                    await self.respond(ctx, "Bot not connected to any voice channel.")
+            elif options == "reload":
+                try:
+                    await voice_state.stop(leave=True)
+                    await self.respond(ctx, "Stopped music and disconnected.")
+                except:
+                    await self.respond(ctx, "Unable to stop and leave.")
+                try:
+                    await guild.voice_client.disconnect()
+                except:
+                    await self.respond(ctx, "Unable to disconnect (mostly because of the bot has already disconnected from last action).")
+                del self.voice_states[guildid]
+                await self.respond(ctx, f"Music bot reloaded at guild {guild.name}, guild id {guildid}.")
 
 def setup(bot):
     bot.add_cog(Music(bot))

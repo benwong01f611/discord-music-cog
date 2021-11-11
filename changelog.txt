@@ -1,3 +1,11 @@
+v1.6.0
+- Added command "musicdebug" for debugging
+- Fixed joining the same voice channel will cause error
+- Fixed regular expression error for command "seek"
+- The bot will automatically disconnected after 3 minutes with no user listening to it (Don't hurt the bot plz)
+- The bot will update the internal data every second
+- Command "runningservers" will display guild id
+
 v1.5.2
 - Removed message sent from command "musicreload"
 - Command "seek" can now seek backward or forward by adding minus sign "-" or plus sign "+". e.g "-seek +1"
