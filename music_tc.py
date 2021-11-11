@@ -933,7 +933,7 @@ class Music(commands.Cog):
                 if self.voice_states[voice_state].voice:
                     guild = self.bot.get_guild(voice_state)
                     server_count += 1
-                    desc += guild.name + "/ " + voice_state + "\n"
+                    desc += guild.name + " / " + str(voice_state) + "\n"
             return await self.respond(ctx, embed=discord.Embed(title="正在使用音樂機器人的伺服器: " + str(server_count), description=desc[:-1]))
 
     @commands.command(name="seek")

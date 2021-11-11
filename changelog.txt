@@ -1,3 +1,7 @@
+v1.6.1
+- Fixed command "runningservers" didn't convert guild id to str for sending message
+- Fixed command "musicdebug" can be used by anyone
+
 v1.6.0
 - Added command "musicdebug" for debugging
 - Fixed joining the same voice channel will cause error
