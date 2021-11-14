@@ -390,7 +390,10 @@ class VoiceState:
             if guild is None:
                 print("[ERROR] Couldn't retrieve guild " + str(self.guild_id))
             else:
-                self.voice = guild.voice_client
+                if guild.voice_client:
+                    self.voice = guild.voice_client
+                else:
+                    await self.stop(leave=True)
 
     async def audio_player_task(self):
         while True:
@@ -473,7 +476,10 @@ class VoiceState:
         if self.voice:
             self.voice.stop()
             if leave:
-                await self.voice.disconnect()
+                try:
+                    await self.voice.disconnect()
+                except:
+                    pass
                 self.voice = None
 
 class Music(commands.Cog):

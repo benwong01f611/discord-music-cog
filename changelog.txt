@@ -1,3 +1,6 @@
+v1.6.2
+- Fixed disconnecting the bot by admin might cause something to break
+
 v1.6.1
 - Fixed command "runningservers" didn't convert guild id to str for sending message
 - Fixed command "musicdebug" can be used by anyone
