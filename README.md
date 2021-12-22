@@ -12,6 +12,7 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Command "now" shows the position of the song
 - Play uploaded files
 - Seek to specific position in seconds
+- Playlist
 
 ## Differences
 - Fixed looping causes exception

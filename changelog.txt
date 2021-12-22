@@ -1,3 +1,36 @@
+v1.7.0
+- CODE OPTIMIZATION (probably)
+- New command: "playlist", allowing user to manage their own playlist
+  Usage: playlist <playlist_name> <action> <args>
+    Action:
+	  None / integer: Display songs in playlist with the integer as page number
+	  "create": Create the playlist
+	  "delete": Delete the playlist
+	  "add": Add song to the playlist, video URL as <args>
+	  "remove": Remove song from playlist, song number as <args>
+	  "rename": Rename the playlist to <args>
+	  "play": Add the playlist to current queue
+- Fixed command "summon" does not work if you are attempting to summon it to your channel without providing channel id
+- Fixed adding playlist would display "Enqueued x-1 songs" instead of "Enqueued x songs"
+- Fixed inputting invalid queue index would not autocorrect
+- Fixed disconnecting the bot by admin would cause problem by checking whether the bot is in the voice channel or not
+- Command "queue" will now show the current playing song, the remaining duration and the queue duration
+- Number of songs displaying in command "queue" reduced from 10 to 5
+- Before playing next song there will be 0.25s delay for ffmpeg to prepare itself (hopefully it can fix the problem of fast forwarding while playing the beginning of the song)
+- Invoking commands in other channel will now bind the message of the details of the next song to that channel
+- Added lots of comments to the code
+- Convert str.format() to f-string
+- Changed the duration of the video from "xx hours, xx minutes, xx seconds" to "xx hours xx minutes xx seconds"
+- Removed skip votes completely (As I don't think this is useful for private servers)
+- Added more music debug options
+- Duration is now stored in the queue's dict object
+- The player will try to replay the same song if it encounters 403 Forbidden
+- Removed unused function
+- When the cog causes an error, it will send a message to notify user (cog_command_error)
+- When debug log is enabled, a base64 encoded traceback message will be sent
+- Try to parse the volume instead of directly converting it
+- Command "playfile" can now detect the uploaded file is a valid audio file or not
+
 v1.6.2
 - Fixed disconnecting the bot by admin might cause something to break
 
