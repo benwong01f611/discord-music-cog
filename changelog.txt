@@ -1,3 +1,9 @@
+v1.7.1
+- Fixed searching a premiere video would cause error
+- Fixed command "queue" and "playlist" display incorrect song URL
+- Fixed reloading cog will not disconnect the bot first
+- Fixed an error in the task for checking users in channel
+
 v1.7.0
 - CODE OPTIMIZATION (probably)
 - New command: "playlist", allowing user to manage their own playlist

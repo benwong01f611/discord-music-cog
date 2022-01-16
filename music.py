@@ -30,7 +30,7 @@ error_messages = {
 }
 
 # Insert authors' id in here, user in this set are allowed to use command "runningservers"
-authors = ()
+authors = (,)
 
 class VoiceError(Exception):
     pass
@@ -46,8 +46,14 @@ class FFMPEGSource(discord.PCMVolumeTransformer):
         self.data = data
         self.title = data.get('title')
         self.url = data.get('url')
-        self.duration = self.parse_duration(int(data.get('duration')))
-        self.duration_raw = self.parse_duration_raw(int(data.get('duration')))
+        try:
+            self.duration = self.parse_duration(int(data.get('duration')))
+        except:
+            self.duration = "Unknown"
+        try:
+            self.duration_raw = self.parse_duration_raw(int(data.get('duration')))
+        except:
+            self.duration = "Unknown"
         self.duration_int = int(data.get('duration'))
 
     def __str__(self):
@@ -143,8 +149,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.title = data.get('title')
         self.thumbnail = data.get('thumbnail')
         self.description = data.get('description')
-        self.duration = self.parse_duration(int(data.get('duration')))
-        self.duration_raw = self.parse_duration_raw(int(data.get('duration')))
+        try:
+            self.duration = self.parse_duration(int(data.get('duration')))
+        except:
+            self.duration = "Unknown"
+        try:
+            self.duration_raw = self.parse_duration_raw(int(data.get('duration')))
+        except:
+            self.duration_raw = "Unknown"
         self.duration_int = int(data.get('duration'))
         self.tags = data.get('tags')
         self.url = data.get('webpage_url')
@@ -331,6 +343,9 @@ class VoiceState:
 
         self.debug = {"debug": False, "channel": None, "debug_log": False}
 
+        # Create task for checking is the bot alone
+        self.listener_task = self.bot.loop.create_task(self.check_user_listening())
+
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
 
@@ -496,15 +511,13 @@ class VoiceState:
                 message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
                 # Create task for updating volume
                 self.volume_updater = self.bot.loop.create_task(self.update_volume())
-                # Create task for checking is the bot alone
-                self.listener_task = self.bot.loop.create_task(self.check_user_listening())
                 await self.next.wait()
                 # Delete the message of the song playing
                 await message.delete()
 
     def play_next_song(self, error=None):
         if error:
-            print(error)
+            print(f"Song finished with error: {str(error)}")
         # Sometimes the link is expired for something, 
         if "Server returned 403 Forbidden (access denied)" in str(error):
             self.next.set()
@@ -527,11 +540,15 @@ class VoiceState:
         # Clear the queue
         self.songs.clear()
         self.current = None
+        if self.volume_updater: self.volume_updater.cancel()
+        if self.audio_player: self.audio_player.cancel()
         if self.voice:
             # Stops the voice
             self.voice.stop()
             # If the bot should leave, then leave and cleanup things
             if leave:
+                if self.listener_task: self.listener_task.cancel()
+                if self.voice_state_updater: self.voice_state_updater.cancel()
                 try:
                     await self.voice.disconnect()
                 except:
@@ -558,15 +575,23 @@ class Music(commands.Cog):
         start = (page - 1) * items_per_page
         end = start + items_per_page
         queue = ''
+        url = "https://youtu.be/" if song_id == "id" else ""
         # If data has children, iterates through all children and create the body
         if len(data):
             for i, song in enumerate(data[start:end], start=start):
                 if "local@" in song[song_id]:
                     title = song['title'].replace('_', '\\_')
-                    queue += f"`{i+1}.` **{title}** ({YTDLSource.parse_duration(song['duration'])})\n"
+                    try:
+                        duration = YTDLSource.parse_duration(song['duration'])
+                    except:
+                        duration = "Unknown"
+                    queue += f"`{i+1}.` **{title}** ({duration})\n"
                 else:
-                    print(song)
-                    queue += f"`{i+1}.` [**{song['title']}**](https://youtu.be/{song[song_id]}) ({YTDLSource.parse_duration_raw(song['duration'])})\n"
+                    try:
+                        duration = YTDLSource.parse_duration_raw(song['duration'])
+                    except:
+                        duration = "Unknown"
+                    queue += f"`{i+1}.` [**{song['title']}**]({url}{song[song_id]}) ({duration})\n"
         else:
             queue = "No songs in queue..."
         embed = (discord.Embed(
@@ -609,10 +634,8 @@ class Music(commands.Cog):
         for state in self.voice_states.values():
             # Leave the channel first or else unexpected behaviour will occur
             self.bot.loop.create_task(state.stop(leave=True))
-            state.volume_updater.cancel()
-            state.listener_task.cancel()
-            state.audio_player.cancel()
-            state.voice_state_updater.cancel()
+            if state.listener_task: state.listener_task.cancel()
+            if state.voice_state_updater: state.voice_state_updater.cancel()
         voice_states = self.voice_states.keys()
         # Remove all voice states from the memory
         for voicestate in voice_states:
@@ -959,7 +982,11 @@ class Music(commands.Cog):
                 playlist.sort(key=lambda song: song["pos"])
                 # Add all songs to the pending list
                 for songs, entry in enumerate(playlist):
-                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": int(song["duration"])})
+                    try:
+                        duration = int(song["duration"])
+                    except:
+                        duration = 0
+                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": duration})
                 await self.respond(ctx.ctx, f"Enqueued {songs+1} songs")
             else:
                 # Just a single song
@@ -976,7 +1003,11 @@ class Music(commands.Cog):
                     else:
                         return await self.respond(ctx.ctx, f"Couldn\'t find anything that matches `{search}`")
                 # Add the song to the pending list
-                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": int(data["duration"])})
+                    try:
+                        duration = int(song["duration"])
+                    except:
+                        duration = 0
+                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
                 await self.respond(ctx.ctx, f"Enqueued {data['title']}")
             ctx.voice_state.stopped = False
         except YTDLError as e:
@@ -993,10 +1024,14 @@ class Music(commands.Cog):
         result = []
         # Get 10 songs from the result
         for entry in data["entries"]:
+            try:
+                duration = YTDLSource.parse_duration(int(entry.get('duration')))
+            except:
+                duration = "Unknown"
             result.append(
                 {
                     "title": entry.get("title"),
-                    "duration": YTDLSource.parse_duration(int(entry.get('duration'))),
+                    "duration": duration,
                     "url": entry.get('webpage_url', "https://youtu.be/" + entry.get('id'))
                 }
             )
@@ -1425,7 +1460,11 @@ class Music(commands.Cog):
                     if ctx.voice_client.channel != ctx.author.voice.channel:
                         return await self.respond(ctx.ctx, "Bot is already in a voice channel.")
             for songs, entry in enumerate(data[args[0]]):
-                await ctx.voice_state.songs.put({"url": f"https://youtu.be/{entry['id']}", "title": entry["title"], "user": ctx.author, "duration": int(entry["duration"])})
+                try:
+                    duration = int(entry["duration"])
+                except:
+                    duration = 0
+                await ctx.voice_state.songs.put({"url": f"https://youtu.be/{entry['id']}", "title": entry["title"], "user": ctx.author, "duration": duration})
             ctx.voice_state.stopped = False
             return await self.respond(ctx.ctx, f"Added {songs+1} songs to queue from playlist **{args[0]}**")
             "Unfinished functions hehe"
