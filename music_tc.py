@@ -386,7 +386,8 @@ class VoiceState:
         self.voice.play(self.current.source, after=self.play_next_song)
         # Update the starttime since the song was seeked
         self.current.starttime = time.time() - self.seek_time
-        self.bot.loop.create_task(self.update_volume())
+        self.volume_checker.cancel()
+        self.volume_checker = self.bot.loop.create_task(self.update_volume())
 
     async def update_volume(self):
         # If it is not playing, dont check, also the task will be recreated when new song is being played
@@ -456,12 +457,12 @@ class VoiceState:
         while True:
             self.next.clear()
             if not self.loop:
-                # Try to get the next song within 3 minutes.
+                # Try to get the next song within 2 minutes.
                 # If no song will be added to the queue in time,
                 # the player will disconnect due to performance
                 # reasons.
                 try:
-                    async with timeout(180):  # 3 minutes
+                    async with timeout(120):  # 2 minutes
                         # If it is skipped, clear the current song
                         if self.skipped:
                             self.current = None
@@ -485,7 +486,7 @@ class VoiceState:
                 if self.skipped or self.stopped:
                     self.current = None
                     try:
-                        async with timeout(180):  # 3 minutes
+                        async with timeout(120):  # 3 minutes
                             self.current = await self.songs.get()
                             if "local@" in self.current["url"]:
                                 self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
@@ -539,15 +540,23 @@ class VoiceState:
         # Clear the queue
         self.songs.clear()
         self.current = None
-        if self.volume_updater: self.volume_updater.cancel()
-        if self.audio_player: self.audio_player.cancel()
+        if self.volume_updater and not self.volume_updater.done():
+            self.volume_updater.cancel()
+        self.volume_updater = None
+        if self.audio_player and not self.audio_player.done():
+            self.audio_player.cancel()
+        self.audio_player = None
         if self.voice:
             # Stops the voice
             self.voice.stop()
             # If the bot should leave, then leave and cleanup things
             if leave:
-                if self.listener_task: self.listener_task.cancel()
-                if self.voice_state_updater: self.voice_state_updater.cancel()
+                if self.listener_task and not self.listener_task.done():
+                    self.listener_task.cancel()
+                self.listener_task = None
+                if self.voice_state_updater and not self.voice_state_updater.done():
+                    self.voice_state_updater.cancel()
+                self.voice_state_updater = None
                 try:
                     await self.voice.disconnect()
                 except:
@@ -624,7 +633,7 @@ class Music(commands.Cog):
             self.voice_states[ctx.guild.id] = state
         # When invoking this function, check whether the audio player task is done
         # If it is done, recreate the task
-        if state.audio_player.done():
+        if state.audio_player and state.audio_player.done():
             state.recreate_bg_task(ctx)
         return state
 
@@ -1075,7 +1084,7 @@ class Music(commands.Cog):
         except:
             pass
         try:
-            await ctx.guild.voice_client.disconnect()
+            await ctx.voice_client.disconnect()
         except:
             pass
         try:
@@ -1208,7 +1217,7 @@ class Music(commands.Cog):
             if guildid == "here":
                 guild, guildid = ctx.guild, ctx.guild.id
             elif guildid == "help":
-                return await self.respond(ctx, "```Usage: musicdebug <guildid> <options> <args>\nOptions:\n    None: Display Voice State details\n    \"queue\": Display queue\n        args: page number\n    \"song\": Display song details\n    \"channel\": Display connected channel details\n        args: \"permission\": View permissions of the voice channel\n              \"join <channel_id>\": Join channel\n              \"disconnect\": Leave channel\n    \"reload\": Perform musicreload on that server```")
+                return await self.respond(ctx, "```Usage: musicdebug <guildid> <options> <args>\nOptions:\n    None: Display Voice State details\n    \"queue\": Display queue\n        args: page number\n    \"song\": Display song details\n    \"channel\": Display connected channel details\n        args: \"permission\": View permissions of the voice channel\n              \"join <channel_id>\": Join channel\n              \"disconnect\": Leave channel\n    \"reload\": Perform musicreload on that server\n    \"log\": Toggle sending log on cog error```")
             else:
                 if guildid is not None:
                     try:

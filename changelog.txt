@@ -1,3 +1,11 @@
+v1.7.3
+- Fixed the problem of bot disconnection
+- The bot will automatically disconnect after 2 minutes of no song provided
+- Voice state tasks will be cancelled and set to None properly after disconnecting the bot or stop the bot
+
+v1.7.2
+- Fixed indentation broke the music player
+
 v1.7.1
 - Fixed searching a premiere video would cause error
 - Fixed command "queue" and "playlist" display incorrect song URL
