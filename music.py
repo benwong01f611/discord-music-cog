@@ -350,7 +350,8 @@ class VoiceState:
         self.__init__(self.bot, ctx)
 
     def __del__(self):
-        self.audio_player.cancel()
+        if self.audio_player:
+            self.audio_player.cancel()
 
     @property
     def loop(self):
@@ -487,7 +488,7 @@ class VoiceState:
                 if self.skipped or self.stopped:
                     self.current = None
                     try:
-                        async with timeout(120):  # 3 minutes
+                        async with timeout(120):  # 2 minutes
                             self.current = await self.songs.get()
                             if "local@" in self.current["url"]:
                                 self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
@@ -544,9 +545,6 @@ class VoiceState:
         if self.volume_updater and not self.volume_updater.done():
             self.volume_updater.cancel()
         self.volume_updater = None
-        if self.audio_player and not self.audio_player.done():
-            self.audio_player.cancel()
-        self.audio_player = None
         if self.voice:
             # Stops the voice
             self.voice.stop()

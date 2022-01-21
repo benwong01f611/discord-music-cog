@@ -349,7 +349,8 @@ class VoiceState:
         self.__init__(self.bot, ctx)
 
     def __del__(self):
-        self.audio_player.cancel()
+        if self.audio_player:
+            self.audio_player.cancel()
 
     @property
     def loop(self):
@@ -486,7 +487,7 @@ class VoiceState:
                 if self.skipped or self.stopped:
                     self.current = None
                     try:
-                        async with timeout(120):  # 3 minutes
+                        async with timeout(120):  # 2 minutes
                             self.current = await self.songs.get()
                             if "local@" in self.current["url"]:
                                 self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
@@ -543,9 +544,6 @@ class VoiceState:
         if self.volume_updater and not self.volume_updater.done():
             self.volume_updater.cancel()
         self.volume_updater = None
-        if self.audio_player and not self.audio_player.done():
-            self.audio_player.cancel()
-        self.audio_player = None
         if self.voice:
             # Stops the voice
             self.voice.stop()
@@ -857,6 +855,7 @@ class Music(commands.Cog):
     async def _stop(self, ctx: commands.Context):
         # Stops the bot and clears the queue
         if not ctx.debug["debug"]:
+            # If the user invoking this command is not in the same channel, return error 
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
                 return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
         ctx.voice_state.songs.clear()
@@ -1045,6 +1044,7 @@ class Music(commands.Cog):
         embed = discord.Embed(  title=f'`{originalkeyword}`的搜尋結果：',
                                 description="請點擊反應來選擇搜索到的結果！",
                                 color=discord.Color.green())
+        # For each song, combine the details to a string
         for count, entry in enumerate(result):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[影片網址 / Click Here]({entry["url"]})' + "\n影片時長：" + entry["duration"] + "\n", inline=False)
         # Send the message of the results
