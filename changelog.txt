@@ -1,3 +1,6 @@
+v1.7.5
+- Fixed the problem of bot disconnection (again)
+
 v1.7.4
 - Fixed the problem of bot disconnection (again)
 

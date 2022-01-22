@@ -550,9 +550,6 @@ class VoiceState:
             self.voice.stop()
             # If the bot should leave, then leave and cleanup things
             if leave:
-                if self.listener_task and not self.listener_task.done():
-                    self.listener_task.cancel()
-                self.listener_task = None
                 if self.voice_state_updater and not self.voice_state_updater.done():
                     self.voice_state_updater.cancel()
                 self.voice_state_updater = None
