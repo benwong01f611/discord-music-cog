@@ -949,7 +949,7 @@ class Music(commands.Cog):
         """
 
         if search == None:
-            return await self.respond(ctx.ctx, "Please provide keywords or URL to play a song.")
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字或URL以搜尋！", color=0xff0000), reply=True)
         # Joins the channel if it hasn't
         if not ctx.voice_state.voice:
             await ctx.invoke(self._join)
@@ -1007,7 +1007,7 @@ class Music(commands.Cog):
                         return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{search}`", color=0xff0000), reply=True)
                 # Add the song to the pending list
                 try:
-                    duration = int(song["duration"])
+                    duration = int(data["duration"])
                 except:
                     duration = 0
                 await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})

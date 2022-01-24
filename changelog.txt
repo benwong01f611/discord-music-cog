@@ -1,3 +1,7 @@
+v1.7.6
+- Fixed command "queue" showing 0 duration
+- Fixed a translation problem of chinese version
+
 v1.7.5
 - Fixed the problem of bot disconnection (again)
 

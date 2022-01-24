@@ -1008,7 +1008,7 @@ class Music(commands.Cog):
                         return await self.respond(ctx.ctx, f"Couldn\'t find anything that matches `{search}`")
                 # Add the song to the pending list
                 try:
-                    duration = int(song["duration"])
+                    duration = int(data["duration"])
                 except:
                     duration = 0
                 await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
