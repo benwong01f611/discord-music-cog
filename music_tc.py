@@ -345,6 +345,8 @@ class VoiceState:
         # Create task for checking is the bot alone
         self.listener_task = self.bot.loop.create_task(self.check_user_listening())
 
+        self.forbidden = False
+
     def recreate_bg_task(self, ctx):
         self.__init__(self.bot, ctx)
 
@@ -387,8 +389,8 @@ class VoiceState:
         self.voice.play(self.current.source, after=self.play_next_song)
         # Update the starttime since the song was seeked
         self.current.starttime = time.time() - self.seek_time
-        self.volume_checker.cancel()
-        self.volume_checker = self.bot.loop.create_task(self.update_volume())
+        self.volume_updater.cancel()
+        self.volume_updater = self.bot.loop.create_task(self.update_volume())
 
     async def update_volume(self):
         # If it is not playing, dont check, also the task will be recreated when new song is being played
@@ -457,71 +459,89 @@ class VoiceState:
     async def audio_player_task(self):
         while True:
             self.next.clear()
-            if not self.loop:
-                # Try to get the next song within 2 minutes.
-                # If no song will be added to the queue in time,
-                # the player will disconnect due to performance
-                # reasons.
-                try:
-                    async with timeout(120):  # 2 minutes
-                        # If it is skipped, clear the current song
-                        if self.skipped:
-                            self.current = None
-                        # Get the next song
-                        self.current = await self.songs.get()
-                        # If the url contains local@, it is a local file
-                        if "local@" in self.current["url"]:
-                            self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
-                        else:
-                            self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
-                        if self.current != "error":
-                            # If loop queue, put the current song back to the end of the queue
-                            if self.loopqueue:
-                                await self.songs.put({"url": self.current.source.url, "title": self.current.source.title, "user": self.current.source.requester, "duration": self.current.source.duration_int})
-                            self.skipped = False
-                            self.stopped = False
-                except asyncio.TimeoutError:
-                    return await self.stop(leave=True)
+            if self.forbidden:
+                if "local@" in self.current.source.url:
+                    self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
+                else:
+                    self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
             else:
-                # Loop but skipped, proceed to next song and keep looping
-                if self.skipped or self.stopped:
-                    self.current = None
+                if not self.loop:
+                    # Try to get the next song within 2 minutes.
+                    # If no song will be added to the queue in time,
+                    # the player will disconnect due to performance
+                    # reasons.
                     try:
                         async with timeout(120):  # 2 minutes
+                            # If it is skipped, clear the current song
+                            if self.skipped:
+                                self.current = None
+                            # Get the next song
                             self.current = await self.songs.get()
+                            # If the url contains local@, it is a local file
                             if "local@" in self.current["url"]:
                                 self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
                             else:
                                 self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
                             if self.current != "error":
+                                # If loop queue, put the current song back to the end of the queue
+                                if self.loopqueue:
+                                    await self.songs.put({"url": self.current.source.url, "title": self.current.source.title, "user": self.current.source.requester, "duration": self.current.source.duration_int})
                                 self.skipped = False
                                 self.stopped = False
                     except asyncio.TimeoutError:
                         return await self.stop(leave=True)
                 else:
-                    # Looping, get the looped song
-                    if "local@" in self.current.source.url:
-                        self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
+                    # Loop but skipped, proceed to next song and keep looping
+                    if self.skipped or self.stopped:
+                        self.current = None
+                        try:
+                            async with timeout(120):  # 2 minutes
+                                self.current = await self.songs.get()
+                                if "local@" in self.current["url"]:
+                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
+                                else:
+                                    self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
+                                if self.current != "error":
+                                    self.skipped = False
+                                    self.stopped = False
+                        except asyncio.TimeoutError:
+                            return await self.stop(leave=True)
                     else:
-                        self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
+                        # Looping, get the looped song
+                        if "local@" in self.current.source.url:
+                            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
+                        else:
+                            self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
             if self.current != "error":
                 self.current.source.volume = self._volume
                 await asyncio.sleep(0.25)
-                self.voice.play(self.current.source, after=self.play_next_song)
+                self.start_time = time.time()
                 self.current.starttime = time.time()
-                message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
+                if not self.forbidden:
+                    self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
+                self.forbidden = False
+                self.voice.play(self.current.source, after=self.play_next_song)
                 # Create task for updating volume
                 self.volume_updater = self.bot.loop.create_task(self.update_volume())
                 await self.next.wait()
                 # Delete the message of the song playing
-                await message.delete()
+                if not self.forbidden:
+                    try:
+                        await self.message.delete()
+                    except:
+                        pass
 
     def play_next_song(self, error=None):
+        end_time = time.time()
+        play_duration = end_time - self.start_time
+        if play_duration < 1 and self.current.source.duration_int != 1:
+            self.forbidden = True
+            self.next.set()
+            return
+        else:
+            self.forbidden = False
         if error:
             print(f"Song finished with error: {str(error)}")
-        # Sometimes the link is expired for something, 
-        if "Server returned 403 Forbidden (access denied)" in str(error):
-            self.next.set()
         # If it is not looping or seeking, clear the current song
         if not self.loop and not self.seeking:
             self.current = None
@@ -557,6 +577,15 @@ class VoiceState:
                 except:
                     pass
                 self.voice = None
+        if self.audio_player and not self.audio_player.done():
+            self.audio_player.cancel()
+            try:
+                await self.message.delete()
+            except:
+                pass
+        if leave:
+            if self.listener_task and not self.listener_task.done():
+                self.listener_task.cancel()
 
 class Music(commands.Cog):
     # Get the total duration from the queue or playlist
@@ -637,8 +666,6 @@ class Music(commands.Cog):
         for state in self.voice_states.values():
             # Leave the channel first or else unexpected behaviour will occur
             self.bot.loop.create_task(state.stop(leave=True))
-            if state.listener_task: state.listener_task.cancel()
-            if state.voice_state_updater: state.voice_state_updater.cancel()
         voice_states = self.voice_states.keys()
         # Remove all voice states from the memory
         for voicestate in voice_states:
@@ -1071,7 +1098,6 @@ class Music(commands.Cog):
         except asyncio.TimeoutError:
             # Timed out after 1 minute
             await message.edit(embed=discord.Embed(title='選擇時間已結束！', color=0xff0000))
-            await self.respond(ctx.ctx, embed=discord.Embed(title='選擇時間已結束！', color=0xff0000), reply=True)
         
     @commands.command(name='musicreload')
     async def musicreload(self, ctx):

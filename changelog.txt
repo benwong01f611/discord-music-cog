@@ -1,3 +1,8 @@
+v1.7.7
+- Fixed song will not be played when 403 Forbidden occurs (Playing 1 second video may still encounter this problem)
+- Command "playlist" can now add a specific song in playlist to queue
+- Removed timed out message for command "search"
+
 v1.7.6
 - Fixed command "queue" showing 0 duration
 - Fixed a translation problem of chinese version
