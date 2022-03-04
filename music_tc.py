@@ -421,24 +421,27 @@ class VoiceState:
     async def check_user_listening(self):
         while True:
             await asyncio.sleep(1)
-            # If there is only 1 member in the voice channel, starts the checking task
-            if self.voice and len(self.voice.channel.members) == 1:
-                self.timer = 0
-                # 180 seconds = 3 minutes, if the bot is alone for 3 minutes it will leave the channel
-                while self.timer != 180:
-                    await asyncio.sleep(1)
-                    self.timer += 1
-                    # If there are at least 2 members in the channel or being kicked out of the channel, reset the timer and break the loop
-                    if len(self.voice.channel.members) > 1 or self.me not in self.voice.channel.members:
-                        self.timer = 0
+            try:
+                # If there is only 1 member in the voice channel, starts the checking task
+                if self.voice and len(self.voice.channel.members) == 1:
+                    self.timer = 0
+                    # 180 seconds = 3 minutes, if the bot is alone for 3 minutes it will leave the channel
+                    while self.timer != 180:
+                        await asyncio.sleep(1)
+                        self.timer += 1
+                        try:
+                            # If there are at least 2 members in the channel or being kicked out of the channel, reset the timer and break the loop
+                            if len(self.voice.channel.members) > 1 or self.me not in self.voice.channel.members:
+                                self.timer = 0
+                                break
+                        except: pass
+                    # Leave the channel and stop everything
+                    # Case 1: only 1 member in the channel and the member is the bot itself
+                    # Case 2: the bot is kicked out from the channel
+                    if (len(self.voice.channel.members) == 1 and self.me in self.voice.channel.members) or self.me not in self.voice.channel.members:
+                        await self.stop(leave=True)
                         break
-                # Leave the channel and stop everything
-                # Case 1: only 1 member in the channel and the member is the bot itself
-                # Case 2: the bot is kicked out from the channel
-                if (len(self.voice.channel.members) == 1 and self.me in self.voice.channel.members) or self.me not in self.voice.channel.members:
-                    await self.stop(leave=True)
-                    break
-                
+            except: pass
     # Update voice state guild object in background
     async def update_voice_state(self):
         await asyncio.sleep(3)
@@ -1488,14 +1491,30 @@ class Music(commands.Cog):
                 if ctx.voice_client:
                     if ctx.voice_client.channel != ctx.author.voice.channel:
                         return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000), reply=True)
-            for songs, entry in enumerate(data[args[0]]):
+            if len(args) < 3 or args[2] == "":
+                for songs, entry in enumerate(data[args[0]]):
+                    try:
+                        duration = int(entry["duration"])
+                    except:
+                        duration = 0
+                    await ctx.voice_state.songs.put({"url": f"https://youtu.be/{entry['id']}", "title": entry["title"], "user": ctx.author, "duration": duration})
+                ctx.voice_state.stopped = False
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至`{args[0]}`中", color=0x1eff00), reply=True)
+            else:
+                try:
+                    index = int(args[2])-1
+                    if index < 1 or index >= len(data[args[0]]):
+                        raise Exception()
+                except:
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供有效的歌曲號碼！", color=0xff0000), reply=True)
+                entry = data[args[0]][index]
                 try:
                     duration = int(entry["duration"])
                 except:
                     duration = 0
                 await ctx.voice_state.songs.put({"url": f"https://youtu.be/{entry['id']}", "title": entry["title"], "user": ctx.author, "duration": duration})
-            ctx.voice_state.stopped = False
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至`{args[0]}`中", color=0x1eff00), reply=True)
+                ctx.voice_state.stopped = False
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f"已從 `{args[0]}` 將歌曲 `{entry['title']}` 加入至播放序列中", color=0x1eff00), reply=True)
             "Unfinished functions hehe"
             """elif args[1] in ("share", "export"):
                 await self.respond(ctx.ctx, embed=discord.Embed(title=f"Playlist Share - {args[0]}", description=base64.b64encode("\n".join(data[args[0]]).encode("utf-8")).decode("utf-8")))
