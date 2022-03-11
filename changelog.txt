@@ -1,3 +1,7 @@
+v1.7.8
+- Both version will reply to the message that invokes the command
+- Fixed some reply message is not replying the original message in tc version
+
 v1.7.7
 - Fixed song will not be played when 403 Forbidden occurs (Playing 1 second video may still encounter this problem)
 - Command "playlist" can now add a specific song in playlist to queue

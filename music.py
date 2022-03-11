@@ -641,12 +641,15 @@ class Music(commands.Cog):
 
     # Function for responding to the user
     # reply=True will cause the bot to reply to the user (discord function)
-    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=False):
-        if reply:
-            return await ctx["message"].reply(message, embed=embed, mention_author=False)
-        else:
-            if isinstance(ctx, dict):
+    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True):
+        if isinstance(ctx, dict):
+            if reply:
+                return await ctx["message"].reply(message, embed=embed, mention_author=False)
+            else:
                 return await ctx["channel"].send(message, embed=embed)
+        else:
+            if reply:
+                return await ctx.reply(message, embed=embed, mention_author=False)
             else:
                 return await ctx.send(message, embed=embed)
     
@@ -999,7 +1002,7 @@ class Music(commands.Cog):
         
         loop = self.bot.loop
         try:
-            await self.respond(ctx.ctx, f"Searching for: **{search}**")
+            await self.respond(ctx.ctx, f"Searching for: **{search}**", reply=False)
             # Supports playing a playlist but it must be like https://youtube.com/playlist?
             if "/playlist?" in search:
                 partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False)

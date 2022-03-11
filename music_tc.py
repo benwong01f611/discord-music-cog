@@ -199,7 +199,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         processed_info = await loop.run_in_executor(None, partial)
 
         if processed_info is None:
-            return await self.respond(ctx.ctx, f"C無法取得該內容或項目：`{webpage_url}`")
+            return await self.respond(ctx.ctx, f"無法取得該內容或項目：`{webpage_url}`")
         if 'entries' not in processed_info:
             info = processed_info
         else:
@@ -639,12 +639,15 @@ class Music(commands.Cog):
 
     # Function for responding to the user
     # reply=True will cause the bot to reply to the user (discord function)
-    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=False):
-        if reply:
-            return await ctx["message"].reply(message, embed=embed, mention_author=False)
-        else:
-            if isinstance(ctx, dict):
+    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True):
+        if isinstance(ctx, dict):
+            if reply:
+                return await ctx["message"].reply(message, embed=embed, mention_author=False)
+            else:
                 return await ctx["channel"].send(message, embed=embed)
+        else:
+            if reply:
+                return await ctx.reply(message, embed=embed, mention_author=False)
             else:
                 return await ctx.send(message, embed=embed)
 
@@ -709,27 +712,27 @@ class Music(commands.Cog):
 
         # If the user is not in any voice channel, don't join
         if not ctx.author.voice or not ctx.author.voice.channel:
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入一個語音頻道！", color=0xff0000), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入一個語音頻道！", color=0xff0000))
             return False
 
         # If the bot is in the voice channel, check whether it is in the same voice channel or not
         if ctx.voice_client:
             if ctx.voice_client.channel != ctx.author.voice.channel:
-                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000))
                 return False
             else:
-                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在你的語音頻道！", color=0xff0000), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在你的語音頻道！", color=0xff0000))
                 return False
         
         destination = ctx.author.voice.channel
 
         # Check permission
         if not destination.permissions_for(ctx.me).connect:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！", color=0xff0000))
 
         # Connect to the channel
         ctx.voice_state.voice = await destination.connect()
-        await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人已進入頻道！", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人已進入頻道！", color=0x1eff00))
 
         # If the channel is a stage channel, wait for 1 second and try to unmute itself
         if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
@@ -738,7 +741,7 @@ class Music(commands.Cog):
                 await ctx.me.edit(suppress=False)
             except:
                 # Unable to unmute itself, ask admin to invite the bot to speak (auto)
-                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000))
         # Clear all music file
         if os.path.isdir(f"./tempMusic/{ctx.guild.id}"):
             shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
@@ -749,7 +752,7 @@ class Music(commands.Cog):
 
         # Didn't join a channel or specify a channel to join
         if not channel and not ctx.author.voice:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你必須指定或進入一個語音頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你必須指定或進入一個語音頻道！", color=0xff0000))
         channel_find = None
         # Try to find the channel
         try:
@@ -759,35 +762,35 @@ class Music(commands.Cog):
                 channel_find = ctx.guild.get_channel(int(channel[2:-1]))
             except:
                 if channel_find is None and not ctx.author.voice:
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000))
         if channel_find is None:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000))
         # Only allow members with "Move member" permission to use this command
         if not ctx.author.guild_permissions.move_members:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 只有擁有\"移動成員\"權限的用戶才能使用本指令！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 只有擁有\"移動成員\"權限的用戶才能使用本指令！", color=0xff0000))
         
         destination = channel_find or ctx.author.voice.channel
 
         # Check permission
         if not destination.permissions_for(ctx.me).connect:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！", color=0xff0000))
         
         # Move to the specific channel and update internal memory
         if ctx.voice_state.voice:
             await ctx.voice_state.voice.move_to(destination)
-            msg = await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！", color=0x1eff00), reply=True)
+            msg = await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！", color=0x1eff00))
             ctx.voice_state.voice = msg.guild.voice_client
         else:
             # Not in any channel, use connect instead
             ctx.voice_state.voice = await destination.connect()
-            msg = await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！", color=0x1eff00), reply=True)
+            msg = await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 機器人已進入 {destination.name}！", color=0x1eff00))
         # If the channel is a stage channel, wait for 1 second and try to unmute itself
         if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
             try:
                 await asyncio.sleep(1)
                 await ctx.me.edit(suppress=False)
             except:
-                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000))
 
     @commands.command(name='leave', aliases=['disconnect', 'dc'])
     async def _leave(self, ctx: commands.Context):
@@ -796,12 +799,12 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
 
             if not ctx.voice_state.voice:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！", color=0xff0000))
 
-        await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人已離開頻道！", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人已離開頻道！", color=0x1eff00))
         # Leaves the channel and delete the data from memory
         await ctx.voice_state.stop(leave=True)
         del self.voice_states[ctx.guild.id]
@@ -813,22 +816,22 @@ class Music(commands.Cog):
             if volume is not None:
                 volume = int(volume)
         except:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效數字！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效數字！", color=0xff0000))
         # Sets the volume of the player
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
             
         # If the bot is not connected to any voice channel, return error
         if not ctx.voice_state:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！", color=0xff0000))
 
         # If volume is not none, the user is updating the volume
         if volume is not None:
             # The volume should be 0 < volume < 100
             if 0 > volume or volume > 100:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你只能設定`1~100`之間的音量！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你只能設定`1~100`之間的音量！", color=0xff0000))
             # The volume should be 0.00~1.00
             ctx.voice_state.volume = volume / 100
             await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已更改音樂音量至`{volume}`！", color=0x1eff00))
@@ -840,8 +843,8 @@ class Music(commands.Cog):
     async def _now(self, ctx: commands.Context):
         # Display currently playing song
         if ctx.voice_state.current is None:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！", color=0xff0000), reply=True)
-        await self.respond(ctx.ctx, embed=ctx.voice_state.current.create_embed("now"), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！", color=0xff0000))
+        await self.respond(ctx.ctx, embed=ctx.voice_state.current.create_embed("now"))
 
     @commands.command(name='pause')
     async def _pause(self, ctx: commands.Context):
@@ -849,16 +852,16 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         # If the bot is playing, pause it
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":arrow_forward: 已暫停目前歌曲！", color=0x1eff00), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":arrow_forward: 已暫停目前歌曲！", color=0x1eff00))
             # Sets the pause time
             ctx.voice_state.current.pause_time = time.time()
             ctx.voice_state.current.paused = True
         else:
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
 
     @commands.command(name='resume', aliases=['r'])
     async def _resume(self, ctx: commands.Context):
@@ -866,17 +869,17 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         # If the bot is paused, resume it
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
             ctx.voice_state.voice.resume()
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":pause_button: 已開始繼續目前歌曲！", color=0x1eff00), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":pause_button: 已開始繼續目前歌曲！", color=0x1eff00))
             # Updates internal data for handling song progress that was paused
             ctx.voice_state.current.pause_duration += time.time() - ctx.voice_state.current.pause_time
             ctx.voice_state.current.pause_time = 0
             ctx.voice_state.current.paused = False
         else:
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
 
     @commands.command(name='stop')
     async def _stop(self, ctx: commands.Context):
@@ -884,13 +887,13 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error 
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         ctx.voice_state.songs.clear()
 
         if ctx.voice_state.is_playing:
             await ctx.voice_state.stop()
             ctx.voice_state.stopped = True
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":record_button: 已清除並停止所有音樂！", color=0x1eff00), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":record_button: 已清除並停止所有音樂！", color=0x1eff00))
 
     @commands.command(name='skip', aliases=['s'])
     async def _skip(self, ctx: commands.Context):
@@ -898,11 +901,11 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         if not ctx.voice_state.is_playing:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！", color=0xff0000))
 
-        await self.respond(ctx.ctx, embed=discord.Embed(title=":next_track: 已跳過當前音樂！", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title=":next_track: 已跳過當前音樂！", color=0x1eff00))
         ctx.voice_state.skip()
 
     @commands.command(name='queue', aliases=["q"])
@@ -916,7 +919,7 @@ class Music(commands.Cog):
         else:
             page = 1
         if len(ctx.voice_state.songs) == 0 and ctx.voice_state.current is None:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 播放序列為空白！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 播放序列為空白！", color=0xff0000))
         
         # Invoking queue while the bot is retrieving another song will cause error, wait for 1 second
         while ctx.voice_state.current is None or isinstance(ctx.voice_state.current, dict):
@@ -928,32 +931,32 @@ class Music(commands.Cog):
         # Shuffles the queue
         # If the user invoking this command is not in the same channel, return error
         if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         if len(ctx.voice_state.songs) == 0:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！", color=0xff0000))
 
         ctx.voice_state.songs.shuffle()
-        await self.respond(ctx.ctx, embed=discord.Embed(title=":cyclone: 已打亂所有等待播放的音樂排序！", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title=":cyclone: 已打亂所有等待播放的音樂排序！", color=0x1eff00))
 
     @commands.command(name='remove')
     async def _remove(self, ctx: commands.Context, index=None):
         if index is None:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效的歌曲號碼！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效的歌曲號碼！", color=0xff0000))
         # Try to parse the index of the song that is going to be removed
         try:
             index = int(index)
         except:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效的歌曲號碼！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效的歌曲號碼！", color=0xff0000))
         # If the user invoking this command is not in the same channel, return error
         if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         if ctx.voice_state.voice.channel != ctx.author.voice.channel:
             return
         if len(ctx.voice_state.songs) == 0:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何等待播放的音樂！", color=0xff0000))
 
         ctx.voice_state.songs.remove(index - 1)
-        await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已刪除第`{index}`首歌！", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已刪除第`{index}`首歌！", color=0x1eff00))
 
     @commands.command(name='loop')
     async def _loop(self, ctx: commands.Context):
@@ -961,12 +964,12 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
             if ctx.voice_state.voice.channel != ctx.author.voice.channel:
                 return
         # Inverse boolean value to loop and unloop.
         ctx.voice_state.loop = not ctx.voice_state.loop
-        await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loop else "關閉") + "歌曲循環", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loop else "關閉") + "歌曲循環", color=0x1eff00))
 
     @commands.command(name='play', aliases=["p"])
     async def _play(self, ctx: commands.Context, *, search=None):
@@ -979,7 +982,7 @@ class Music(commands.Cog):
         """
 
         if search == None:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字或URL以搜尋！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字或URL以搜尋！", color=0xff0000))
         # Joins the channel if it hasn't
         if not ctx.voice_state.voice:
             await ctx.invoke(self._join)
@@ -989,21 +992,21 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
 
             if ctx.voice_client:
                 if ctx.voice_client.channel != ctx.author.voice.channel:
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000))
             
         loop = self.bot.loop
         try:
-            await self.respond(ctx.ctx, f"正在搜尋該曲目或網址：**{search}**")
+            await self.respond(ctx.ctx, f"正在搜尋該曲目或網址：**{search}**", reply=False)
             # Supports playing a playlist but it must be like https://youtube.com/playlist?
             if "/playlist?" in search:
                 partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False)
                 data = await loop.run_in_executor(None, partial)
                 if data is None:
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{search}`", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{search}`", color=0xff0000))
                 entries = data["entries"]
                 playlist = []
                 for pos, song in enumerate(entries):
@@ -1020,7 +1023,7 @@ class Music(commands.Cog):
                     except:
                         duration = 0
                     await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": duration})
-                await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至播放序列中", color=0x1eff00), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至播放序列中", color=0x1eff00))
             else:
                 # Just a single song
                 try:
@@ -1029,28 +1032,28 @@ class Music(commands.Cog):
                 except Exception as e:
                     # Get the error message from dictionary, if it doesn't exist in dict, return the original error message
                     message = error_messages.get(str(e), str(e))
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 錯誤：{message}", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 錯誤：{message}", color=0xff0000))
                 if "entries" in data:
                     if len(data["entries"]) > 0:
                         data = data["entries"][0]
                     else:
-                        return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{search}`", color=0xff0000), reply=True)
+                        return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{search}`", color=0xff0000))
                 # Add the song to the pending list
                 try:
                     duration = int(data["duration"])
                 except:
                     duration = 0
                 await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
-                await self.respond(ctx.ctx, embed=discord.Embed(title=f"已將歌曲 `{data['title']}` 加入至播放序列中", color=0x1eff00), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=f"已將歌曲 `{data['title']}` 加入至播放序列中", color=0x1eff00))
             ctx.voice_state.stopped = False
         except YTDLError as e:
-            await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 機器人處理該歌曲時發生錯誤：{str(e)}", color=0x1eff00), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 機器人處理該歌曲時發生錯誤：{str(e)}", color=0x1eff00))
             
     @commands.command(name='search')
     async def search(self, ctx, *, keyword = None):
         # Search from Youtube and returns 10 songs
         if keyword == None:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字以搜尋！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字以搜尋！", color=0xff0000))
         originalkeyword = keyword
         keyword = "ytsearch10:" + keyword
         data = YTDLSource.ytdl_playlist.extract_info(keyword, download=False)
@@ -1075,7 +1078,7 @@ class Music(commands.Cog):
         for count, entry in enumerate(result):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[影片網址 / Click Here]({entry["url"]})' + "\n影片時長：" + entry["duration"] + "\n", inline=False)
         # Send the message of the results
-        message = await self.respond(ctx.ctx, embed=embed, reply=True)
+        message = await self.respond(ctx.ctx, embed=embed)
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         # Add reactions to that message
         for x in range(count + 1):
@@ -1091,11 +1094,11 @@ class Music(commands.Cog):
             await message.edit(embed=discord.Embed(title="已選擇結果：", description=result[reaction_list.index(reaction.emoji)]["title"], color=discord.Color.green()))
             # Invoke the play command
             if not ctx.author.voice or not ctx.author.voice.channel:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入或指定一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入或指定一個語音頻道！", color=0xff0000))
 
             if ctx.voice_client:
                 if ctx.voice_client.channel != ctx.author.voice.channel:
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在其他語音頻道！", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在其他語音頻道！", color=0xff0000))
             await self._play(ctx=ctx, search=result[reaction_list.index(reaction.emoji)]["url"])
 
         except asyncio.TimeoutError:
@@ -1118,7 +1121,7 @@ class Music(commands.Cog):
         except:
             pass
         del self.voice_states[ctx.guild.id]
-        await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人己重新載入！", color=discord.Color.green()), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人己重新載入！", color=discord.Color.green()))
     
     @commands.command(name="loopqueue", aliases=['lq'])
     async def loopqueue(self, ctx):
@@ -1126,7 +1129,7 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         
         # Inverse the boolean
         ctx.voice_state.loopqueue = not ctx.voice_state.loopqueue
@@ -1136,7 +1139,7 @@ class Music(commands.Cog):
                 await ctx.voice_state.songs.put({"url": ctx.voice_state.current.source.url, "title": ctx.voice_state.current.source.title, "user": ctx.voice_state.current.source.requester, "duration": ctx.voice_state.current.source.duration_int})
         except:
             pass
-        await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loopqueue else "關閉") + "歌單循環", color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loopqueue else "關閉") + "歌單循環", color=0x1eff00))
     
     @commands.command(name="playfile", aliases=["pf"])
     async def playfile(self, ctx, *, title=None):
@@ -1144,10 +1147,10 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         # No file proviced
         if len(ctx.message.attachments) == 0:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要提供一個檔案！", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要提供一個檔案！", color=0xff0000))
         # Joins the channel before playing
         if not ctx.voice_state.voice:
             state = await ctx.invoke(self._join)
@@ -1170,9 +1173,9 @@ class Music(commands.Cog):
         try:
             await ctx.voice_state.songs.put({"url": "local@" + filename, "title": title, "user": ctx.author, "duration": int(float(subprocess.check_output(f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filename}\"", shell=True).decode("ascii").replace("\r", "").replace("\n", "")))})
         except:
-            return await self.respond(ctx.ctx, discord.Embed(title="無法新增此歌曲，或許這不是一個音訊檔案？", color=0xff0000), reply=True)
+            return await self.respond(ctx.ctx, discord.Embed(title="無法新增此歌曲，或許這不是一個音訊檔案？", color=0xff0000))
         # Displaying filename with _ will cause discord to format the text, replace them with \_ to avoid this problem
-        await self.respond(ctx.ctx, embed=discord.Embed(title='已將歌曲 `{}` 加入至播放序列中'.format(title.replace("_", "\\_")), color=0x1eff00), reply=True)
+        await self.respond(ctx.ctx, embed=discord.Embed(title='已將歌曲 `{}` 加入至播放序列中'.format(title.replace("_", "\\_")), color=0x1eff00))
         ctx.voice_state.stopped = False
 
     @commands.command(name="runningservers", aliases=["rs"])
@@ -1192,7 +1195,7 @@ class Music(commands.Cog):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             try:
                 # Google this regular expression by yourself
@@ -1224,16 +1227,16 @@ class Music(commands.Cog):
                 else:
                     seconds = int(seconds)
             except:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 無法抓取跳轉的秒數！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 無法抓取跳轉的秒數！", color=0xff0000))
             if seconds is None:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要輸入跳轉的秒數！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要輸入跳轉的秒數！", color=0xff0000))
             ctx.voice_state.seeking = True
             ctx.voice_state.seek_time = seconds
             current = ctx.voice_state.current
             await ctx.voice_state.seek(seconds, "local@" in current.source.url)
-            await self.respond(ctx.ctx, embed=discord.Embed(title=f":fast_forward: 已跳轉至{seconds}秒！", color=0x1eff00), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=f":fast_forward: 已跳轉至{seconds}秒！", color=0x1eff00))
         else:
-            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
     
     @commands.command(name="musicdebug")
     async def musicdebug(self, ctx, guildid=None, options=None, *, args=None):
@@ -1400,39 +1403,39 @@ class Music(commands.Cog):
             data = {}
         if args is None:
             if data == {}:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你沒有任何播放清單！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你沒有任何播放清單！", color=0xff0000))
             else:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title="播放清單", description="\n".join(list(data.keys()))), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title="播放清單", description="\n".join(list(data.keys()))))
         args = args.split(" ")
         if args[0] not in data:
             if len(args) == 1 or (len(args) >= 2 and args[1] != "create"):
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到名為{args[0]}的播放清單！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到名為{args[0]}的播放清單！", color=0xff0000))
         if len(args) == 1:
             playlist = data[args[0]]
             page = 1
             if len(data[args[0]]) == 0:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你的播放清單為空白！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你的播放清單為空白！", color=0xff0000))
             await self.respond(ctx.ctx, embed=self.queue_embed(data[args[0]], page, f"播放清單 \"{args[0]}\"", "", "id"))
         elif args[1] == "create":
             if args[0] not in data:
                 data[args[0]] = []
-                await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 播放清單`{args[0]}`已被建立！", color=0x1eff00), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 播放清單`{args[0]}`已被建立！", color=0x1eff00))
             else:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 播放清單`{args[0]}`已經存在！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 播放清單`{args[0]}`已經存在！", color=0xff0000))
         elif args[1] == "delete":
             del data[args[0]]
-            await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 播放清單`{args[0]}`已被刪除！", color=0x1eff00), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 播放清單`{args[0]}`已被刪除！", color=0x1eff00))
         elif args[1] == "add":
             playlist = data[args[0]]
             if len(args) == 2:
-                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供歌曲的URL！", color=0xff0000), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供歌曲的URL！", color=0xff0000))
             else:
                 loop = self.bot.loop
                 if "/playlist?" in args[2]:
                     partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, args[2], download=False)
                     data_search = await loop.run_in_executor(None, partial)
                     if data_search is None:
-                        return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{args[2]}`", color=0xff0000), reply=True)
+                        return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{args[2]}`", color=0xff0000))
                     entries = data_search["entries"]
                     playlist_search = []
                     for pos, song in enumerate(entries):
@@ -1443,7 +1446,7 @@ class Music(commands.Cog):
                     # Add all songs to the pending list
                     for songs, entry in enumerate(playlist_search):
                         playlist.append({"id": entry["id"], "title": entry["title"], "duration": entry["duration"]})
-                    await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: :white_check_mark: 已將`{songs+1}`首歌曲加入至`{args[0]}`", color=0x1eff00), reply=True)
+                    await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: :white_check_mark: 已將`{songs+1}`首歌曲加入至`{args[0]}`", color=0x1eff00))
                 else:
                     # Just a single song
                     try:
@@ -1452,31 +1455,31 @@ class Music(commands.Cog):
                     except Exception as e:
                         # Get the error message from dictionary, if it doesn't exist in dict, return the original error message
                         message = error_messages.get(str(e), str(e))
-                        return await self.respond(ctx.ctx, embed=discord.Embed(title=f"錯誤： {message}", color=0xff0000), reply=True) 
+                        return await self.respond(ctx.ctx, embed=discord.Embed(title=f"錯誤： {message}", color=0xff0000)) 
                     if "entries" in data_video:
                         if len(data_video["entries"]) > 0:
                             data_video = data_video["entries"][0]
                         else:
-                            return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{args[2]}`", color=0xff0000), reply=True)
+                            return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{args[2]}`", color=0xff0000))
                     # Add the song to the pending list
                     playlist.append({"id": data_video["id"], "title": data_video["title"], "duration": int(data_video["duration"])})
-                    await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將歌曲 `{data_video['title']}` 加入至`{args[0]}`中", color=0x1eff00), reply=True)
+                    await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將歌曲 `{data_video['title']}` 加入至`{args[0]}`中", color=0x1eff00))
         elif args[1] == "remove":
             if len(args) < 3:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供要移除的歌曲號碼！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供要移除的歌曲號碼！", color=0xff0000))
             try:
                 song = data[args[0]].pop(int(args[2])-1)
-                await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: `{song['title']}`已從`{args[0]}`移除！", color=0x1eff00), reply=True)
+                await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: `{song['title']}`已從`{args[0]}`移除！", color=0x1eff00))
             except:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 無法移除歌曲，請提供有效的歌曲號碼！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 無法移除歌曲，請提供有效的歌曲號碼！", color=0xff0000))
         elif args[1] == "rename":
             if len(args) < 3 or args[2] == "":
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 請為{args[0]}提供新的名字！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 請為{args[0]}提供新的名字！", color=0xff0000))
             if args[2] in data:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: `{args[2]}`已經存在！.", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: `{args[2]}`已經存在！.", color=0xff0000))
             data[args[2]] = data[args[0]].copy()
             del data[args[0]]
-            await self.respond(ctx.ctx, embed=discord.Embed(title=f"`{args[0]}` 已重新命名為`{args[2]}`", color=0xff0000), reply=True)
+            await self.respond(ctx.ctx, embed=discord.Embed(title=f"`{args[0]}` 已重新命名為`{args[2]}`", color=0xff0000))
         elif args[1] == "play":
             # Joins the channel if it hasn't
             if not ctx.voice_state.voice:
@@ -1487,10 +1490,10 @@ class Music(commands.Cog):
             if not ctx.debug["debug"]:
                 # If the user invoking this command is not in the same channel, return error
                 if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
                 if ctx.voice_client:
                     if ctx.voice_client.channel != ctx.author.voice.channel:
-                        return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000), reply=True)
+                        return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000))
             if len(args) < 3 or args[2] == "":
                 for songs, entry in enumerate(data[args[0]]):
                     try:
@@ -1499,14 +1502,14 @@ class Music(commands.Cog):
                         duration = 0
                     await ctx.voice_state.songs.put({"url": f"https://youtu.be/{entry['id']}", "title": entry["title"], "user": ctx.author, "duration": duration})
                 ctx.voice_state.stopped = False
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至`{args[0]}`中", color=0x1eff00), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至`{args[0]}`中", color=0x1eff00))
             else:
                 try:
                     index = int(args[2])-1
                     if index < 1 or index >= len(data[args[0]]):
                         raise Exception()
                 except:
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供有效的歌曲號碼！", color=0xff0000), reply=True)
+                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供有效的歌曲號碼！", color=0xff0000))
                 entry = data[args[0]][index]
                 try:
                     duration = int(entry["duration"])
@@ -1514,7 +1517,7 @@ class Music(commands.Cog):
                     duration = 0
                 await ctx.voice_state.songs.put({"url": f"https://youtu.be/{entry['id']}", "title": entry["title"], "user": ctx.author, "duration": duration})
                 ctx.voice_state.stopped = False
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=f"已從 `{args[0]}` 將歌曲 `{entry['title']}` 加入至播放序列中", color=0x1eff00), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=f"已從 `{args[0]}` 將歌曲 `{entry['title']}` 加入至播放序列中", color=0x1eff00))
             "Unfinished functions hehe"
             """elif args[1] in ("share", "export"):
                 await self.respond(ctx.ctx, embed=discord.Embed(title=f"Playlist Share - {args[0]}", description=base64.b64encode("\n".join(data[args[0]]).encode("utf-8")).decode("utf-8")))
@@ -1531,7 +1534,7 @@ class Music(commands.Cog):
             except:
                 page = 1
             if len(data[args[0]]) == 0:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你的播放清單為空白！", color=0xff0000), reply=True)
+                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你的播放清單為空白！", color=0xff0000))
             await self.respond(ctx.ctx, embed=self.queue_embed(data[args[0]], page, f"播放清單 \"{args[0]}\"", "", "id"))
         if not os.path.isdir("./music"):
             os.mkdir("./music")
