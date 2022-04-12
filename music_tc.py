@@ -9,7 +9,7 @@ import time
 import discord
 import youtube_dl
 from async_timeout import timeout
-from discord.ext import commands
+from discord.ext import commands, bridge
 
 import subprocess
 import shutil
@@ -39,7 +39,7 @@ class YTDLError(Exception):
     pass
 
 class FFMPEGSource(discord.PCMVolumeTransformer):
-    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
+    def __init__(self, ctx, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
         super().__init__(source, volume)
         self.requester = ctx.author
         self.channel = ctx.channel
@@ -135,7 +135,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     ytdl = youtube_dl.YoutubeDL(YTDL_OPTIONS)
     ytdl_playlist = youtube_dl.YoutubeDL(YTDL_OPTIONS_PLAYLIST)
 
-    def __init__(self, ctx: commands.Context, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
+    def __init__(self, ctx, source: discord.FFmpegPCMAudio, *, data: dict, volume: float = 0.5, seek=None):
         super().__init__(source, volume)
 
         self.requester = data.get('requester')
@@ -169,7 +169,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return '**{0.title}** by **{0.uploader}**'.format(self)
 
     @classmethod
-    async def create_source(self, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None, seek=None):
+    async def create_source(self, ctx, search: str, *, loop: asyncio.BaseEventLoop = None, requester=None, seek=None):
         loop = loop or asyncio.get_event_loop()
 
         # Extract data with youtube-dl
@@ -314,7 +314,7 @@ class SongQueue(asyncio.Queue):
 
 
 class VoiceState:
-    def __init__(self, bot: commands.Bot, ctx: commands.Context):
+    def __init__(self, bot: commands.Bot, ctx):
         self.bot = bot
         self._ctx = ctx
 
@@ -640,23 +640,34 @@ class Music(commands.Cog):
     # Function for responding to the user
     # reply=True will cause the bot to reply to the user (discord function)
     async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True):
-        if isinstance(ctx, dict):
+        if isinstance(ctx, dict): 
             if reply:
-                return await ctx["message"].reply(message, embed=embed, mention_author=False)
+                if isinstance(ctx["ctx"], discord.ext.bridge.context.BridgeExtContext): # Prefix
+                    return await ctx["ctx"].reply(message, embed=embed, mention_author=False)
+                else:
+                    return await ctx["ctx"].respond(message, embed=embed)
+
             else:
                 return await ctx["channel"].send(message, embed=embed)
-        else:
+                    
+        else: # Debugging
             if reply:
-                return await ctx.reply(message, embed=embed, mention_author=False)
+                if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
+                    return await ctx.reply(message, embed=embed, mention_author=False)
+                else:
+                    return await ctx.respond(message, embed=embed)
             else:
-                return await ctx.send(message, embed=embed)
+                if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
+                    return await ctx.send(message, embed=embed)
+                else:
+                    return await ctx.respond(message, embed=embed)
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.voice_states = {}
 
     # Get the voice state from dictionary, create if it does not exist
-    def get_voice_state(self, ctx: commands.Context):
+    def get_voice_state(self, ctx):
         state = self.voice_states.get(ctx.guild.id)
         if not state:
             state = VoiceState(self.bot, ctx)
@@ -682,18 +693,18 @@ class Music(commands.Cog):
             pass
 
     # All commands from this cog cannot be used in DM
-    def cog_check(self, ctx: commands.Context):
+    def cog_check(self, ctx):
         if not ctx.guild:
             raise commands.NoPrivateMessage('該指令無法在私訊中使用！')
         return True
 
     # Before invoking any commands, get the voice state first
     # Update the context object also
-    async def cog_before_invoke(self, ctx: commands.Context):
+    async def cog_before_invoke(self, ctx):
         self.get_voice_state(ctx)._ctx = ctx
         ctx.voice_state = self.get_voice_state(ctx)
         ctx.debug = ctx.voice_state.debug
-        ctx.ctx = {"channel": ctx.channel, "message": ctx.message}
+        ctx.ctx = {"channel": ctx.channel, "message": ctx.message, "ctx":ctx}
 
     # Return a meaningful message to user when error occurs
     # If debug log is enabled, return the traceback for debugging use. The debug message is encoded in base64 in case leaking the directory info
@@ -706,8 +717,8 @@ class Music(commands.Cog):
             if ctx.voice_state.debug["debug_log"]:
                 await ctx.send("Debug file", file=discord.File(io.BytesIO(base64.b64encode(formatted_error.encode("utf-8"))), f"{ctx.guild.id}_error.txt"))
 
-    @commands.command(name='join', invoke_without_subcommand=True)
-    async def _join(self, ctx: commands.Context):
+    @bridge.bridge_command(name='join', invoke_without_subcommand=True)
+    async def _join(self, ctx):
         # Joins the channel
 
         # If the user is not in any voice channel, don't join
@@ -717,12 +728,14 @@ class Music(commands.Cog):
 
         # If the bot is in the voice channel, check whether it is in the same voice channel or not
         if ctx.voice_client:
-            if ctx.voice_client.channel != ctx.author.voice.channel:
+            if ctx.voice_client.channel.id != ctx.author.voice.channel.id:
                 await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000))
                 return False
             else:
-                await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在你的語音頻道！", color=0xff0000))
-                return False
+                if not ctx.from_play:
+                    await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在你的語音頻道！", color=0xff0000))
+                    return False
+                return True
         
         destination = ctx.author.voice.channel
 
@@ -745,9 +758,10 @@ class Music(commands.Cog):
         # Clear all music file
         if os.path.isdir(f"./tempMusic/{ctx.guild.id}"):
             shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
+        await ctx.me.edit(deafen=True)
 
-    @commands.command(name='summon')
-    async def _summon(self, ctx: commands.Context, *, channel=None):
+    @bridge.bridge_command(name='summon')
+    async def _summon(self, ctx, *, channel=None):
         # Summon the bot to other channel or the current channel
 
         # Didn't join a channel or specify a channel to join
@@ -792,8 +806,8 @@ class Music(commands.Cog):
             except:
                 await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000))
 
-    @commands.command(name='leave', aliases=['disconnect', 'dc'])
-    async def _leave(self, ctx: commands.Context):
+    @bridge.bridge_command(name='leave', aliases=['disconnect', 'dc'])
+    async def _leave(self, ctx):
         # Clears the queue and leave the channel
 
         if not ctx.debug["debug"]:
@@ -809,8 +823,8 @@ class Music(commands.Cog):
         await ctx.voice_state.stop(leave=True)
         del self.voice_states[ctx.guild.id]
 
-    @commands.command(name='volume', aliases=['v'])
-    async def _volume(self, ctx: commands.Context, volume=None):
+    @bridge.bridge_command(name='volume', aliases=['v'])
+    async def _volume(self, ctx, volume=None):
         # If the parameter is set, try to parse it as an integer
         try:
             if volume is not None:
@@ -824,7 +838,7 @@ class Music(commands.Cog):
                 return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
             
         # If the bot is not connected to any voice channel, return error
-        if not ctx.voice_state:
+        if not ctx.voice_state.voice:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人並沒有連接到任何頻道！", color=0xff0000))
 
         # If volume is not none, the user is updating the volume
@@ -839,15 +853,15 @@ class Music(commands.Cog):
             # Return the current volume
             return await self.respond(ctx.ctx, embed=discord.Embed(title=f"目前音量: `{int(ctx.voice_state.volume*100)}`%", color=0x1eff00))
 
-    @commands.command(name='now', aliases=['current', 'playing'])
-    async def _now(self, ctx: commands.Context):
+    @bridge.bridge_command(name='now', aliases=['current', 'playing'])
+    async def _now(self, ctx):
         # Display currently playing song
         if ctx.voice_state.current is None:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！", color=0xff0000))
         await self.respond(ctx.ctx, embed=ctx.voice_state.current.create_embed("now"))
 
-    @commands.command(name='pause')
-    async def _pause(self, ctx: commands.Context):
+    @bridge.bridge_command(name='pause')
+    async def _pause(self, ctx):
         # Pauses the player
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -863,8 +877,8 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
 
-    @commands.command(name='resume', aliases=['r'])
-    async def _resume(self, ctx: commands.Context):
+    @bridge.bridge_command(name='resume', aliases=['r'])
+    async def _resume(self, ctx):
         # Resumes the bot
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -881,8 +895,8 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
 
-    @commands.command(name='stop')
-    async def _stop(self, ctx: commands.Context):
+    @bridge.bridge_command(name='stop')
+    async def _stop(self, ctx):
         # Stops the bot and clears the queue
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error 
@@ -895,8 +909,8 @@ class Music(commands.Cog):
             ctx.voice_state.stopped = True
             await self.respond(ctx.ctx, embed=discord.Embed(title=":record_button: 已清除並停止所有音樂！", color=0x1eff00))
 
-    @commands.command(name='skip', aliases=['s'])
-    async def _skip(self, ctx: commands.Context):
+    @bridge.bridge_command(name='skip', aliases=['s'])
+    async def _skip(self, ctx):
         # Skips the current song
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -908,8 +922,8 @@ class Music(commands.Cog):
         await self.respond(ctx.ctx, embed=discord.Embed(title=":next_track: 已跳過當前音樂！", color=0x1eff00))
         ctx.voice_state.skip()
 
-    @commands.command(name='queue', aliases=["q"])
-    async def _queue(self, ctx: commands.Context, *, page=None):
+    @bridge.bridge_command(name='queue', aliases=["q"])
+    async def _queue(self, ctx, *, page=None):
         # Shows the queue, add page number to view different pages
         if page is not None:
             try:
@@ -926,8 +940,8 @@ class Music(commands.Cog):
             await asyncio.sleep(1)
         return await self.respond(ctx.ctx, embed=self.queue_embed(ctx.voice_state.songs, page, f"正在播放", f"[**{ctx.voice_state.current.source.title}**]({ctx.voice_state.current.source.url}) (剩餘{YTDLSource.parse_duration(ctx.voice_state.current.source.duration_int - int(time.time() - ctx.voice_state.current.starttime - ctx.voice_state.current.pause_duration))})", "url"))
 
-    @commands.command(name='shuffle')
-    async def _shuffle(self, ctx: commands.Context):
+    @bridge.bridge_command(name='shuffle')
+    async def _shuffle(self, ctx):
         # Shuffles the queue
         # If the user invoking this command is not in the same channel, return error
         if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
@@ -938,8 +952,8 @@ class Music(commands.Cog):
         ctx.voice_state.songs.shuffle()
         await self.respond(ctx.ctx, embed=discord.Embed(title=":cyclone: 已打亂所有等待播放的音樂排序！", color=0x1eff00))
 
-    @commands.command(name='remove')
-    async def _remove(self, ctx: commands.Context, index=None):
+    @bridge.bridge_command(name='remove')
+    async def _remove(self, ctx, index=None):
         if index is None:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效的歌曲號碼！", color=0xff0000))
         # Try to parse the index of the song that is going to be removed
@@ -958,8 +972,8 @@ class Music(commands.Cog):
         ctx.voice_state.songs.remove(index - 1)
         await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已刪除第`{index}`首歌！", color=0x1eff00))
 
-    @commands.command(name='loop')
-    async def _loop(self, ctx: commands.Context):
+    @bridge.bridge_command(name='loop')
+    async def _loop(self, ctx):
         # Toggle the looping of the current song
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -971,8 +985,8 @@ class Music(commands.Cog):
         ctx.voice_state.loop = not ctx.voice_state.loop
         await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loop else "關閉") + "歌曲循環", color=0x1eff00))
 
-    @commands.command(name='play', aliases=["p"])
-    async def _play(self, ctx: commands.Context, *, search=None):
+    @bridge.bridge_command(name='play', aliases=["p"])
+    async def _play(self, ctx, *, search=None):
         # Plays a song, mostly from Youtube
         """Plays a song.
         If there are songs in the queue, this will be queued until the
@@ -985,6 +999,7 @@ class Music(commands.Cog):
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字或URL以搜尋！", color=0xff0000))
         # Joins the channel if it hasn't
         if not ctx.voice_state.voice:
+            ctx.from_play = True
             await ctx.invoke(self._join)
         # Errors may occur while joining the channel, if the voice is None, don't continue
         if not ctx.voice_state.voice:
@@ -1049,7 +1064,7 @@ class Music(commands.Cog):
         except YTDLError as e:
             await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 機器人處理該歌曲時發生錯誤：{str(e)}", color=0x1eff00))
             
-    @commands.command(name='search')
+    @bridge.bridge_command(name='search')
     async def search(self, ctx, *, keyword = None):
         # Search from Youtube and returns 10 songs
         if keyword == None:
@@ -1079,17 +1094,25 @@ class Music(commands.Cog):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[影片網址 / Click Here]({entry["url"]})' + "\n影片時長：" + entry["duration"] + "\n", inline=False)
         # Send the message of the results
         message = await self.respond(ctx.ctx, embed=embed)
-        reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+        if isinstance(message, discord.Interaction):
+            message = await message.original_message()
+        reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "❌"]
         # Add reactions to that message
-        for x in range(count + 1):
+        for x in range(count + 2):
             await message.add_reaction(reaction_list[x])
         # Function for checking whether the responding user is the same user, the emoji is in the list, and the message is the same message
         def check(reaction, user):
-            return user == ctx.message.author and str(reaction.emoji) in reaction_list and reaction.message == message
+            if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+                return user == ctx.message.author and str(reaction.emoji) in reaction_list and reaction.message.id == message.id
+            else:
+                return user == ctx.user and str(reaction.emoji) in reaction_list and reaction.message.id == message.id
 
         try:
             # Wait for response, if no response after 1 minute, return message of timed out
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
+            await message.clear_reactions()
+            if reaction.emoji == "❌":
+                return await message.edit(embed=discord.Embed(title="已取消搜尋", description=None, color=discord.Color.green()))
             # Edit the message to reduce its size
             await message.edit(embed=discord.Embed(title="已選擇結果：", description=result[reaction_list.index(reaction.emoji)]["title"], color=discord.Color.green()))
             # Invoke the play command
@@ -1105,7 +1128,7 @@ class Music(commands.Cog):
             # Timed out after 1 minute
             await message.edit(embed=discord.Embed(title='選擇時間已結束！', color=0xff0000))
         
-    @commands.command(name='musicreload')
+    @bridge.bridge_command(name='musicreload')
     async def musicreload(self, ctx):
         # Disconnect the bot and delete voice state from internal memory in case something goes wrong
         try:
@@ -1123,7 +1146,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
         await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人己重新載入！", color=discord.Color.green()))
     
-    @commands.command(name="loopqueue", aliases=['lq'])
+    @bridge.bridge_command(name="loopqueue", aliases=['lq'])
     async def loopqueue(self, ctx):
         # Loops the queue
         if not ctx.debug["debug"]:
@@ -1178,7 +1201,7 @@ class Music(commands.Cog):
         await self.respond(ctx.ctx, embed=discord.Embed(title='已將歌曲 `{}` 加入至播放序列中'.format(title.replace("_", "\\_")), color=0x1eff00))
         ctx.voice_state.stopped = False
 
-    @commands.command(name="runningservers", aliases=["rs"])
+    @bridge.bridge_command(name="runningservers", aliases=["rs"])
     async def runningservers(self, ctx):
         # Check whether the user id is in the author list
         if ctx.author.id in authors:
@@ -1190,7 +1213,7 @@ class Music(commands.Cog):
                     desc += f'{self.bot.get_guild(guild_id).name} / {guild_id}\n'
             return await self.respond(ctx.ctx, embed=discord.Embed(title=f"正在使用音樂機器人的伺服器: {str(server_count)}", description=desc[:-1]))
 
-    @commands.command(name="seek")
+    @bridge.bridge_command(name="seek")
     async def seek(self, ctx, seconds=None):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -1238,7 +1261,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
     
-    @commands.command(name="musicdebug")
+    @bridge.bridge_command(name="musicdebug")
     async def musicdebug(self, ctx, guildid=None, options=None, *, args=None):
         # Debug menu
         if ctx.author.id in authors:
@@ -1368,22 +1391,6 @@ class Music(commands.Cog):
             elif options == "log":
                 ctx.voice_state.debug["debug_log"] = not ctx.voice_state.debug["debug_log"]
                 await self.respond(ctx, "Debug log " + ("enabled." if ctx.voice_state.debug["debug_log"] else "disabled."))
-            elif options == "skip":
-                await self._skip(ctx)
-            elif options == "loop":
-                await self._loop(ctx)
-            elif options in ("loopqueue", "lq"):
-                await self.loopqueue(ctx)
-            elif options == "seek":
-                await self.seek(ctx, args)
-            elif options in ("playfile", "pf"):
-                await self.playfile(ctx)
-            elif options == "pause":
-                await self._pause(ctx)
-            elif options == "resume":
-                await self._resume(ctx)
-            elif options == "stop":
-                await self._stop(ctx)
             """elif options == "playlist":
                 import io
                 file = f"./music/playlist_{ctx.guild.id}.json"
@@ -1394,7 +1401,7 @@ class Music(commands.Cog):
                 data = json.dumps(data, indent=4, ensure_ascii=False)
                 await ctx.send(file=discord.File(io.BytesIO(data.encode("utf-8")), f"playlist_{ctx.guild.id}.json"))"""
 
-    @commands.command(name="playlist")
+    @bridge.bridge_command(name="playlist")
     async def playlist_func(self, ctx, *, args=None):
         file = f"./music/playlist_{ctx.author.id}.json"
         if os.path.isfile(file):
@@ -1539,6 +1546,10 @@ class Music(commands.Cog):
         if not os.path.isdir("./music"):
             os.mkdir("./music")
         open(file, "w", encoding="utf-8").write(json.dumps(data))
+
+    @bridge.bridge_command(name="musicversion")
+    async def musicversion(self, ctx):
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord 音樂 Cog v1.8.0").add_field(name="作者", value="<@127312771888054272>").add_field(name="Cog Github 連結", value="[連結](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

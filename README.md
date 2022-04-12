@@ -1,5 +1,6 @@
 # Music Extension for discord.py
 This is a fork from a replit template. Some bugs were found during usage, therefore I decided to modify it.
+[pycord](https://github.com/Pycord-Development/pycord) is required to run this cog since v1.8.0
 ## Features
 - Play / Pause / Stop music
 - Queue

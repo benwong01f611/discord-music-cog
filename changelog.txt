@@ -1,3 +1,16 @@
+v1.8.0
+=== NOTE ===
+This cog requires pycord to use the slash command API.
+- Slash commands! (except playfile since slash commands cannot be used with attachments)
+- Command "search" can now be cancelled
+- Bug fixing for command "stop"
+- The bot will now deafen itself when joining voice channel
+- Command "volume" won't be able to use if the bot is not in a channel
+- Command "musicdebug" has less functionality now as those functions are not necessary
+- Added command "musicversion" just to let the developer know what version your bot is running
+- Fixed command "join" is checking voice channel object instead of ID
+- Known issue: using command "stop" will cause the next play instruction non-functional, not sure how to fix
+
 v1.7.8
 - Both version will reply to the message that invokes the command
 - Fixed some reply message is not replying the original message in tc version
