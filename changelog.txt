@@ -1,3 +1,8 @@
+v1.8.1
+- Command "search" will now use menu to select options instead of giving reaction
+- Player can now be controlled with buttons
+- Upcoming: Slash command option description (Requires pycord update as the API has a bug which prevents using discord.Option() as input parameter, this makes prefix command unusable while slash command runs perfectly)
+
 v1.8.0
 === NOTE ===
 This cog requires pycord to use the slash command API.

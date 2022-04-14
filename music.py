@@ -315,7 +315,7 @@ class SongQueue(asyncio.Queue):
 
 
 class VoiceState:
-    def __init__(self, bot: commands.Bot, ctx):
+    def __init__(self, bot: commands.Bot, ctx, cog):
         self.bot = bot
         self._ctx = ctx
 
@@ -348,8 +348,10 @@ class VoiceState:
 
         self.forbidden = False
 
-    def recreate_bg_task(self, ctx):
-        self.__init__(self.bot, ctx)
+        self.cog = cog
+
+    def recreate_bg_task(self, ctx, cog):
+        self.__init__(self.bot, ctx, cog)
 
     def __del__(self):
         if self.audio_player:
@@ -523,7 +525,7 @@ class VoiceState:
                 self.start_time = time.time()
                 self.current.starttime = time.time()
                 if not self.forbidden:
-                    self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
+                    self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"), view=PlayerControlView(self.bot, self))
                 self.forbidden = False
                 self.voice.play(self.current.source, after=self.play_next_song)
                 # Create task for updating volume
@@ -592,6 +594,223 @@ class VoiceState:
             if self.listener_task and not self.listener_task.done():
                 self.listener_task.cancel()
 
+class SearchMenu(discord.ui.Select):
+    def __init__(self, bot, options_raw, cog, ctx):
+        self.bot = bot
+        self.cog = cog
+        self.ctx = ctx
+        reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+        options = [discord.SelectOption(label=data["title"], description=f"Duration: {data['duration']}", value=data["index"], emoji=reaction_list[data["index"]]) for data in options_raw]
+        options.append(discord.SelectOption(label="Cancel", description="Cancel the search", value=11, emoji="❌"))
+        self.data = options_raw
+        self.completed = False
+        super().__init__(
+            placeholder="Select the desired song...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    async def respond(self, message_reply, message: str=None, embed: discord.Embed=None, reply: bool=True, view=None):
+        if reply:
+                return await message_reply.reply(message, embed=embed, mention_author=False, view=view)
+        else:
+                return await message_reply.channel.send(message, embed=embed, view=view)
+    async def join(self, ctx, interaction_message):
+        destination = ctx.author.voice.channel
+
+        # Check permission
+        if not destination.permissions_for(ctx.me).connect:
+            return await self.respond(interaction_message, "No permission to join the voice channel!")
+        # Connect to the channel
+        ctx.voice_state.voice = await destination.connect()
+        await self.respond(interaction_message, f"Joined **{destination}**.")
+        
+        # If the channel is a stage channel, wait for 1 second and try to unmute itself
+        if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
+            try:
+                await asyncio.sleep(1)
+                await ctx.me.edit(suppress=False)
+            except:
+                # Unable to unmute itself, ask admin to invite the bot to speak (auto)
+                await self.respond(interaction_message, "I have no permission to speak! Please invite me to speak.")
+        # Clear all music file
+        if os.path.isdir(f"./tempMusic/{ctx.guild.id}"):
+            shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
+        await ctx.me.edit(deafen=True)
+
+    async def callback(self, interaction):
+        if int(self.values[0]) == 11:
+            return await interaction.message.edit(embed=discord.Embed(title="Cancelled", description=None, color=discord.Color.green()), view=None)
+        # Edit the message to reduce its size
+        await interaction.message.edit(embed=discord.Embed(title="Selected:", description=self.data[int(self.values[0])]["title"], color=discord.Color.green()), view=None)
+        await interaction.response.send_message("Selected " + self.data[int(self.values[0])]["title"])
+        
+        
+        
+        # Invoke the play command
+
+        if not self.ctx.author.voice or not self.ctx.author.voice.channel:
+            return await self.respond(interaction.message, 'You are not connected to any voice channel.')
+        voice_client = (await self.bot.fetch_guild(interaction.guild_id)).voice_client
+        if voice_client:
+            if voice_client.channel != self.ctx.author.voice.channel:
+                return await  self.respond(interaction.message, 'Bot is already in a voice channel.')
+        #await self.cog._play(ctx=self.ctx, search=self.data[int(self.values[0])]["url"])
+        ctx = self.ctx
+        search = self.data[int(self.values[0])]["url"]
+        if search == None:
+            return await self.respond(interaction.message, "Please provide keywords or URL to play a song.")
+        # Joins the channel if it hasn't
+        if not ctx.voice_state.voice:
+            ctx.from_play = True
+            await self.join(ctx, interaction.message)
+        # Errors may occur while joining the channel, if the voice is None, don't continue
+        if not ctx.voice_state.voice:
+            return
+        if not ctx.debug["debug"]:
+            # If the user invoking this command is not in the same channel, return error
+            if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+                return await self.respond(interaction.message, "You are not connected to any voice channel or the same voice channel.")
+
+            if ctx.voice_client:
+                if ctx.voice_client.channel != ctx.author.voice.channel:
+                    return await self.respond(interaction.message, "Bot is already in a voice channel.")
+        
+        loop = self.bot.loop
+        try:
+            await self.respond(interaction.message, f"Searching for: **{search}**", reply=False)
+            # Supports playing a playlist but it must be like https://youtube.com/playlist?
+            if "/playlist?" in search:
+                partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False)
+                data = await loop.run_in_executor(None, partial)
+                if data is None:
+                    return await self.respond(interaction.message, f"Couldn\'t find anything that matches `{search}`")
+                entries = data["entries"]
+                playlist = []
+                for pos, song in enumerate(entries):
+                    # Youtube only, guess no one would play other than Youtube
+                    url = "https://youtu.be/" + song["id"]
+                    title = song["title"]
+                    playlist.append({"pos": pos, "url": url, "title": title, "duration": int(song["duration"])})
+                # Sort the playlist variable to match with the order in YouTube
+                playlist.sort(key=lambda song: song["pos"])
+                # Add all songs to the pending list
+                for songs, entry in enumerate(playlist):
+                    try:
+                        duration = int(song["duration"])
+                    except:
+                        duration = 0
+                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": duration})
+                await self.respond(interaction.message, f"Enqueued {songs+1} songs")
+            else:
+                # Just a single song
+                try:
+                    partial = functools.partial(YTDLSource.ytdl.extract_info, search, download=False)
+                    data = await loop.run_in_executor(None, partial)
+                except Exception as e:
+                    # Get the error message from dictionary, if it doesn't exist in dict, return the original error message
+                    message = error_messages.get(str(e), str(e))
+                    return await self.respond(interaction.message, f"Error: {message}")
+                if "entries" in data:
+                    if len(data["entries"]) > 0:
+                        data = data["entries"][0]
+                    else:
+                        return await self.respond(interaction.message, f"Couldn\'t find anything that matches `{search}`")
+                # Add the song to the pending list
+                try:
+                    duration = int(data["duration"])
+                except:
+                    duration = 0
+                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
+                await self.respond(interaction.message, f"Enqueued {data['title']}")
+            ctx.voice_state.stopped = False
+        except YTDLError as e:
+            await self.respond(interaction.message, f"An error occurred while processing this request: {str(e)}")
+        self.completed = True
+
+class SearchView(discord.ui.View):
+    def __init__(self, bot, data, ctx, cog):
+        self.bot = bot
+        self.ctx = ctx
+        self.data = data
+        self.cog = cog
+        super().__init__(timeout=60)
+        self.add_item(SearchMenu(self.bot, data, cog, ctx))
+    async def on_timeout(self):
+        if not self.children[0].completed:
+            await self.message.edit(embed=discord.Embed(title="Timed out", description=None, color=0xff0000), view=None)
+
+class PlayerControlView(discord.ui.View):
+    def __init__(self, bot, voice_state):
+        self.bot = bot
+        self.voice_state = voice_state
+        super().__init__(timeout=None)
+
+        self.children[4].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
+        self.children[5].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
+    
+    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, custom_id="0", emoji="⏸", disabled=False)
+    async def pause(self, button, interaction):
+        await interaction.response.defer()
+        if self.voice_state.is_playing and self.voice_state.voice.is_playing():
+            self.voice_state.voice.pause()
+            # Sets the pause time
+            self.voice_state.current.pause_time = time.time()
+            self.voice_state.current.paused = True
+        self.children[1].disabled = False
+        button.disabled = True
+        await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, custom_id="1", emoji="▶", disabled=True)
+    async def resume(self, button, interaction):
+        await interaction.response.defer()
+        if self.voice_state.is_playing and self.voice_state.voice.is_paused():
+            self.voice_state.voice.resume()
+            # Updates internal data for handling song progress that was paused
+            self.voice_state.current.pause_duration += time.time() - self.voice_state.current.pause_time
+            self.voice_state.current.pause_time = 0
+            self.voice_state.current.paused = False
+        self.children[0].disabled = False
+        button.disabled = True
+        await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary, custom_id="2", emoji="⏭", disabled=False)
+    async def skip(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.skip()
+        #await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.primary, custom_id="3", emoji="⏹", disabled=False)
+    async def stop(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.songs.clear()
+
+        if self.voice_state.is_playing:
+            await self.voice_state.stop()
+            self.voice_state.stopped = True
+        #await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="Loop", style=discord.ButtonStyle.primary, custom_id="4", emoji="🔂", disabled=False)
+    async def loop(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.loop = not self.voice_state.loop
+        self.children[4].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
+        self.children[5].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
+        await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="Loop Queue", style=discord.ButtonStyle.primary, custom_id="5", emoji="🔂", disabled=False)
+    async def loopqueue(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.loopqueue = not self.voice_state.loopqueue
+        try:
+            if self.voice_state.loopqueue:
+                await self.voice_state.songs.put({"url": self.voice_state.current.source.url, "title": self.voice_state.current.source.title, "user": self.voice_state.current.source.requester, "duration": self.voice_state.current.source.duration_int})
+        except:
+            pass
+        self.children[4].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
+        self.children[5].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
+        await interaction.message.edit(view=self)
+
 class Music(commands.Cog):
     # Get the total duration from the queue or playlist
     def getTotalDuration(self, data):
@@ -641,28 +860,28 @@ class Music(commands.Cog):
 
     # Function for responding to the user
     # reply=True will cause the bot to reply to the user (discord function)
-    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True):
+    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True, view=None):
         if isinstance(ctx, dict): 
             if reply:
                 if isinstance(ctx["ctx"], discord.ext.bridge.context.BridgeExtContext): # Prefix
-                    return await ctx["ctx"].reply(message, embed=embed, mention_author=False)
+                    return await ctx["ctx"].reply(message, embed=embed, mention_author=False, view=view)
                 else:
-                    return await ctx["ctx"].respond(message, embed=embed)
+                    return await ctx["ctx"].respond(message, embed=embed, view=view)
 
             else:
-                return await ctx["channel"].send(message, embed=embed)
+                return await ctx["channel"].send(message, embed=embed, view=view)
                     
         else: # Debugging
             if reply:
                 if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
-                    return await ctx.reply(message, embed=embed, mention_author=False)
+                    return await ctx.reply(message, embed=embed, mention_author=False, view=view)
                 else:
-                    return await ctx.respond(message, embed=embed)
+                    return await ctx.respond(message, embed=embed, view=view)
             else:
                 if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
-                    return await ctx.send(message, embed=embed)
+                    return await ctx.send(message, embed=embed, view=view)
                 else:
-                    return await ctx.respond(message, embed=embed)
+                    return await ctx.respond(message, embed=embed, view=view)
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -672,12 +891,12 @@ class Music(commands.Cog):
     def get_voice_state(self, ctx):
         state = self.voice_states.get(ctx.guild.id)
         if not state:
-            state = VoiceState(self.bot, ctx)
+            state = VoiceState(self.bot, ctx, self)
             self.voice_states[ctx.guild.id] = state
         # When invoking this function, check whether the audio player task is done
         # If it is done, recreate the task
         if state.audio_player and state.audio_player.done():
-            state.recreate_bg_task(ctx)
+            state.recreate_bg_task(ctx, self)
         return state
 
     # Stop all async tasks for each voice state
@@ -715,11 +934,11 @@ class Music(commands.Cog):
         if str(error) == "This command can't be used in DM channels.":
             return await ctx.send("This command can't be used in DM channels.")
         await ctx.send(f"Error: {error}")
-        if ctx.voice_state:
+        if hasattr(ctx, "voice_state") and ctx.voice_state:
             if ctx.voice_state.debug["debug_log"]:
                 await ctx.send("Debug file", file=discord.File(io.BytesIO(base64.b64encode(formatted_error.encode("utf-8"))), f"{ctx.guild.id}_error.txt"))
 
-    @bridge.bridge_command(name='join', invoke_without_subcommand=True)
+    @bridge.bridge_command(name='join', invoke_without_subcommand=True, description="Joins the current voice channel")
     async def _join(self, ctx):
         # Joins the channel
 
@@ -762,7 +981,8 @@ class Music(commands.Cog):
             shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
         await ctx.me.edit(deafen=True)
 
-    @bridge.bridge_command(name='summon')
+    @bridge.bridge_command(name='summon', description="Summon the bot to current voice channel (Requires Move Member permission)")
+    #async def _summon(self, ctx, *, channel:discord.Option(discord.VoiceChannel, "Summon the bot to current voice channel (Requires Move Member permission)")=None):
     async def _summon(self, ctx, *, channel=None):
         # Summon the bot to other channel or the current channel
 
@@ -808,7 +1028,7 @@ class Music(commands.Cog):
             except:
                 await self.respond(ctx.ctx, "I have no permission to speak! Please invite me to speak")
 
-    @bridge.bridge_command(name='leave', aliases=['disconnect', 'dc'])
+    @bridge.bridge_command(name='leave', aliases=['disconnect', 'dc'], description="Leave the voice channel")
     async def _leave(self, ctx):
         # Clears the queue and leave the channel
 
@@ -827,7 +1047,8 @@ class Music(commands.Cog):
         await ctx.voice_state.stop(leave=True)
         del self.voice_states[ctx.guild.id]
 
-    @bridge.bridge_command(name='volume', aliases=['v'])
+    @bridge.bridge_command(name='volume', aliases=['v'], description="Show/Adjust the volume of the bot")
+    #async def _volume(self, ctx, volume:discord.Option(int, "Volume (0-100)")=None):
     async def _volume(self, ctx, volume=None):
         # If the parameter is set, try to parse it as an integer
         try:
@@ -857,14 +1078,14 @@ class Music(commands.Cog):
             # Return the current volume
             return await self.respond(ctx.ctx, f"Current volume: {int(ctx.voice_state.volume*100)}%")
 
-    @bridge.bridge_command(name='now', aliases=['current', 'playing'])
+    @bridge.bridge_command(name='now', aliases=['current', 'playing'], description="Display current song")
     async def _now(self, ctx):
         # Display currently playing song
         if ctx.voice_state.current is None:
             return await self.respond(ctx.ctx, "There is no songs playing right now.")
         await self.respond(ctx.ctx, embed=ctx.voice_state.current.create_embed("now"))
 
-    @bridge.bridge_command(name='pause')
+    @bridge.bridge_command(name='pause', description="Pause the song")
     async def _pause(self, ctx):
         # Pauses the player
         if not ctx.debug["debug"]:
@@ -885,7 +1106,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, "There is no songs playing right now or the music is already paused.")
 
-    @bridge.bridge_command(name='resume', aliases=['r'])
+    @bridge.bridge_command(name='resume', aliases=['r'], description="Resume paused song")
     async def _resume(self, ctx):
         # Resumes the bot
         if not ctx.debug["debug"]:
@@ -906,7 +1127,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, "There is no songs paused right now.") 
 
-    @bridge.bridge_command(name='stop')
+    @bridge.bridge_command(name='stop', description="Remove all songs in queue and stop the bot")
     async def _stop(self, ctx):
         # Stops the bot and clears the queue
         if not ctx.debug["debug"]:
@@ -923,7 +1144,7 @@ class Music(commands.Cog):
             else:
                 await self.respond(ctx.ctx, "Music stopped.")
 
-    @bridge.bridge_command(name='skip', aliases=['s'])
+    @bridge.bridge_command(name='skip', aliases=['s'], description="Skip current song")
     async def _skip(self, ctx):
         # Skips the current song
         if not ctx.debug["debug"]:
@@ -939,7 +1160,8 @@ class Music(commands.Cog):
             await self.respond(ctx.ctx, "Music skipped.")
         ctx.voice_state.skip()
 
-    @bridge.bridge_command(name='queue', aliases=["q"])
+    @bridge.bridge_command(name='queue', aliases=["q"], description="Show song queue")
+    #async def _queue(self, ctx, *, page:discord.Option(int, "Page number")=None):
     async def _queue(self, ctx, *, page=None):
         # Shows the queue, add page number to view different pages
         if page is not None:
@@ -957,7 +1179,7 @@ class Music(commands.Cog):
             await asyncio.sleep(1)
         return await self.respond(ctx.ctx, embed=self.queue_embed(ctx.voice_state.songs, page, f"Currently Playing", f"[**{ctx.voice_state.current.source.title}**]({ctx.voice_state.current.source.url}) ({YTDLSource.parse_duration(ctx.voice_state.current.source.duration_int - int(time.time() - ctx.voice_state.current.starttime - ctx.voice_state.current.pause_duration))} Left)", "url"))
     
-    @bridge.bridge_command(name='shuffle')
+    @bridge.bridge_command(name='shuffle', description="Shuffle the song queue")
     async def _shuffle(self, ctx):
         # Shuffles the queue
         # If the user invoking this command is not in the same channel, return error
@@ -972,7 +1194,8 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, "Song queue shuffled.")
 
-    @bridge.bridge_command(name='remove')
+    @bridge.bridge_command(name='remove', description="Remove a song from queue")
+    #async def _remove(self, ctx, index:discord.Option(int, "Index of the song")=None):
     async def _remove(self, ctx, index=None):
         if index is None:
             return await self.respond(ctx.ctx, "Please provide a valid song number in queue to remove.")
@@ -996,7 +1219,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, "Song removed.")
 
-    @bridge.bridge_command(name='loop')
+    @bridge.bridge_command(name='loop', description="Toggle looping for current song")
     async def _loop(self, ctx):
         # Toggle the looping of the current song
         if not ctx.debug["debug"]:
@@ -1010,7 +1233,8 @@ class Music(commands.Cog):
         ctx.voice_state.loop = not ctx.voice_state.loop
         await self.respond(ctx.ctx, ("Enabled" if ctx.voice_state.loop else "Disabled") + " looping")
 
-    @bridge.bridge_command(name='play', aliases=["p"])
+    @bridge.bridge_command(name='play', aliases=["p"], description="Plays a song or a playlist")
+    #async def _play(self, ctx, *, search:discord.Option(str, "URL or keyword")=None):
     async def _play(self, ctx, *, search=None):
         # Plays a song, mostly from Youtube
         """Plays a song.
@@ -1089,8 +1313,9 @@ class Music(commands.Cog):
         except YTDLError as e:
             await self.respond(ctx.ctx, f"An error occurred while processing this request: {str(e)}")
             
-    @bridge.bridge_command(name='search')
-    async def search(self, ctx, *, keyword = None):
+    @bridge.bridge_command(name='search', description="Search a song from Youtube")
+    #async def search(self, ctx, *, keyword:discord.Option(str, "Keyword")=None):
+    async def search(self, ctx, *, keyword=None):
         # Search from Youtube and returns 10 songs
         if keyword == None:
             return await self.respond(ctx.ctx, "Please provide keywords to search for songs.")
@@ -1099,7 +1324,7 @@ class Music(commands.Cog):
         data = YTDLSource.ytdl_playlist.extract_info(keyword, download=False)
         result = []
         # Get 10 songs from the result
-        for entry in data["entries"]:
+        for index, entry in enumerate(data["entries"]):
             try:
                 duration = YTDLSource.parse_duration(int(entry.get('duration')))
             except:
@@ -1108,52 +1333,25 @@ class Music(commands.Cog):
                 {
                     "title": entry.get("title"),
                     "duration": duration,
-                    "url": entry.get('webpage_url', "https://youtu.be/" + entry.get('id'))
+                    "url": entry.get('webpage_url', "https://youtu.be/" + entry.get('id')),
+                    "index": index
                 }
             )
         embed = discord.Embed(  title=f'Search results of {originalkeyword}',
-                                description="Please select the search result by reacting this message",
+                                description="Please select the search result by selecting the option in the menu",
                                 color=discord.Color.green())
         # For each song, combine the details to a string
         for count, entry in enumerate(result):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[Link]({entry["url"]})' + "\nDuration: " + entry["duration"] + "\n", inline=False)
         # Send the message of the results
-        message = await self.respond(ctx.ctx, embed=embed)
+        view = SearchView(self.bot, result, ctx, self)
+
+        message = await self.respond(ctx.ctx, embed=embed, view=view)
         if isinstance(message, discord.Interaction):
             message = await message.original_message()
-        reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "❌"]
-        # Add reactions to that message
-        for x in range(count + 2):
-            await message.add_reaction(reaction_list[x])
-        # Function for checking whether the responding user is the same user, the emoji is in the list, and the message is the same message
-        def check(reaction, user):
-            if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
-                return user == ctx.message.author and str(reaction.emoji) in reaction_list and reaction.message.id == message.id
-            else:
-                return user == ctx.user and str(reaction.emoji) in reaction_list and reaction.message.id == message.id
-
-        try:
-            # Wait for response, if no response after 1 minute, return message of timed out
-            reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
-            await message.clear_reactions()
-            if reaction.emoji == "❌":
-                return await message.edit(embed=discord.Embed(title="Cancelled", description=None, color=discord.Color.green()))
-            # Edit the message to reduce its size
-            await message.edit(embed=discord.Embed(title="Selected:", description=result[reaction_list.index(reaction.emoji)]["title"], color=discord.Color.green()))
-            # Invoke the play command
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                return await self.respond(ctx.ctx, 'You are not connected to any voice channel.')
-
-            if ctx.voice_client:
-                if ctx.voice_client.channel != ctx.author.voice.channel:
-                    return await self.respond(ctx.ctx, 'Bot is already in a voice channel.')
-            await self._play(ctx=ctx, search=result[reaction_list.index(reaction.emoji)]["url"])
-
-        except asyncio.TimeoutError:
-            # Timed out after 1 minute
-            await message.edit(embed=discord.Embed(title="Timed out", color=0xff0000))
+        view.message = message
     
-    @bridge.bridge_command(name='musicreload')
+    @bridge.bridge_command(name='musicreload', description="Reload the music bot")
     async def musicreload(self, ctx):
         # Disconnect the bot and delete voice state from internal memory in case something goes wrong
         try:
@@ -1171,7 +1369,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
         await self.respond(ctx.ctx, "Music bot reloaded.")
 
-    @bridge.bridge_command(name="loopqueue", aliases=['lq'])
+    @bridge.bridge_command(name="loopqueue", aliases=['lq'], description="Toggle looping for current queue")
     async def loopqueue(self, ctx):
         # Loops the queue
         if not ctx.debug["debug"]:
@@ -1189,7 +1387,7 @@ class Music(commands.Cog):
             pass
         await self.respond(ctx.ctx, ("Enabled" if ctx.voice_state.loopqueue else "Disabled") + " queue looping")
 
-    @commands.command(name="playfile", aliases=["pf"])
+    @commands.command(name="playfile", aliases=["pf"], description="Plays an uploaded file")
     async def playfile(self, ctx, *, title=None):
         # Plays uploaded file
         if not ctx.debug["debug"]:
@@ -1226,7 +1424,7 @@ class Music(commands.Cog):
         await self.respond(ctx.ctx, 'Enqueued {}'.format(title.replace("_", "\\_")))
         ctx.voice_state.stopped = False
     
-    @bridge.bridge_command(name="runningservers", aliases=["rs"])
+    @commands.command(name="runningservers", aliases=["rs"])
     async def runningservers(self, ctx):
         # Check whether the user id is in the author list
         if ctx.author.id in authors:
@@ -1238,7 +1436,8 @@ class Music(commands.Cog):
                     desc += f'{self.bot.get_guild(guild_id).name} / {guild_id}\n'
             return await self.respond(ctx.ctx, embed=discord.Embed(title=f"Servers running music bot: {str(server_count)}", description=desc[:-1]))
 
-    @bridge.bridge_command(name="seek")
+    @bridge.bridge_command(name="seek", description="Seek to a specific point")
+    #async def seek(self, ctx, seconds:discord.Option(str, "Number of seconds, fast forward, backward or in this format: 1h2m3s")=None):
     async def seek(self, ctx, seconds=None):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -1286,7 +1485,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, "There is no songs playing right now.")
     
-    @bridge.bridge_command(name="musicdebug")
+    @commands.command(name="musicdebug")
     async def musicdebug(self, ctx, guildid=None, options=None, *, args=None):
         # Debug menu
         if ctx.author.id in authors:
@@ -1426,7 +1625,7 @@ class Music(commands.Cog):
                 data = json.dumps(data, indent=4, ensure_ascii=False)
                 await ctx.send(file=discord.File(io.BytesIO(data.encode("utf-8")), f"playlist_{ctx.guild.id}.json"))"""
 
-    @bridge.bridge_command(name="playlist")
+    @bridge.bridge_command(name="playlist", description="Manage playlist")
     async def playlist_func(self, ctx, *, args=None):
         file = f"./music/playlist_{ctx.author.id}.json"
         if os.path.isfile(file):
@@ -1572,9 +1771,9 @@ class Music(commands.Cog):
             os.mkdir("./music")
         open(file, "w", encoding="utf-8").write(json.dumps(data))
 
-    @bridge.bridge_command(name="musicversion")
+    @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.0").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.1").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

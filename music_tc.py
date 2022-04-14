@@ -314,7 +314,7 @@ class SongQueue(asyncio.Queue):
 
 
 class VoiceState:
-    def __init__(self, bot: commands.Bot, ctx):
+    def __init__(self, bot: commands.Bot, ctx, cog):
         self.bot = bot
         self._ctx = ctx
 
@@ -347,8 +347,10 @@ class VoiceState:
 
         self.forbidden = False
 
-    def recreate_bg_task(self, ctx):
-        self.__init__(self.bot, ctx)
+        self.cog = cog
+
+    def recreate_bg_task(self, ctx, cog):
+        self.__init__(self.bot, ctx, cog)
 
     def __del__(self):
         if self.audio_player:
@@ -521,7 +523,7 @@ class VoiceState:
                 self.start_time = time.time()
                 self.current.starttime = time.time()
                 if not self.forbidden:
-                    self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"))
+                    self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"), view=PlayerControlView(self.bot, self))
                 self.forbidden = False
                 self.voice.play(self.current.source, after=self.play_next_song)
                 # Create task for updating volume
@@ -589,7 +591,223 @@ class VoiceState:
         if leave:
             if self.listener_task and not self.listener_task.done():
                 self.listener_task.cancel()
+class SearchMenu(discord.ui.Select):
+    def __init__(self, bot, options_raw, cog, ctx):
+        self.bot = bot
+        self.cog = cog
+        self.ctx = ctx
+        reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+        options = [discord.SelectOption(label=data["title"], description=f"影片長度: {data['duration']}", value=data["index"], emoji=reaction_list[data["index"]]) for data in options_raw]
+        options.append(discord.SelectOption(label="取消", description="取搜尋", value=11, emoji="❌"))
+        self.data = options_raw
+        self.completed = False
+        super().__init__(
+            placeholder="選擇歌曲...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    async def respond(self, message_reply, message: str=None, embed: discord.Embed=None, reply: bool=True, view=None):
+        if reply:
+                return await message_reply.reply(message, embed=embed, mention_author=False, view=view)
+        else:
+                return await message_reply.channel.send(message, embed=embed, view=view)
+    async def join(self, ctx, interaction_message):
+        destination = ctx.author.voice.channel
 
+        # Check permission
+        if not destination.permissions_for(ctx.me).connect:
+            return await self.respond(interaction_message, embed=discord.Embed(title=":x: 機器人沒有權限加入該語音頻道！", color=0xff0000))
+        # Connect to the channel
+        ctx.voice_state.voice = await destination.connect()
+        await self.respond(interaction_message, embed=discord.Embed(title=":white_check_mark: 機器人已進入頻道！", color=0x1eff00))
+        
+        # If the channel is a stage channel, wait for 1 second and try to unmute itself
+        if isinstance(ctx.voice_state.voice.channel, discord.StageChannel):
+            try:
+                await asyncio.sleep(1)
+                await ctx.me.edit(suppress=False)
+            except:
+                # Unable to unmute itself, ask admin to invite the bot to speak (auto)
+                await self.respond(interaction_message, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000))
+        # Clear all music file
+        if os.path.isdir(f"./tempMusic/{ctx.guild.id}"):
+            shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
+        await ctx.me.edit(deafen=True)
+
+    async def callback(self, interaction):
+        if int(self.values[0]) == 11:
+            return await interaction.message.edit(embed=discord.Embed(title="已取消搜尋", description=None, color=discord.Color.green()), view=None)
+        # Edit the message to reduce its size
+        await interaction.message.edit(embed=discord.Embed(title="已選擇結果：", description=self.data[int(self.values[0])]["title"], color=discord.Color.green()), view=None)
+        await interaction.response.send_message("已選擇 ``" + self.data[int(self.values[0])]["title"] + "``")
+        
+        
+        
+        # Invoke the play command
+
+        if not self.ctx.author.voice or not self.ctx.author.voice.channel:
+                return await self.respond(interaction.message, embed=discord.Embed(title=":x: 你需要先進入或指定一個語音頻道！", color=0xff0000))
+        voice_client = (await self.bot.fetch_guild(interaction.guild_id)).voice_client
+        if voice_client:
+            if voice_client.channel != self.ctx.author.voice.channel:
+                return await self.respond(interaction.message, embed=discord.Embed(title=":x: 機器人已經在其他語音頻道！", color=0xff0000))
+
+        ctx = self.ctx
+        search = self.data[int(self.values[0])]["url"]
+        if search == None:
+            return await self.respond(interaction.message, embed=discord.Embed(title=":x: 請提供關鍵字或URL以搜尋！", color=0xff0000))
+        # Joins the channel if it hasn't
+        if not ctx.voice_state.voice:
+            ctx.from_play = True
+            await self.join(ctx, interaction.message)
+        # Errors may occur while joining the channel, if the voice is None, don't continue
+        if not ctx.voice_state.voice:
+            return
+        if not ctx.debug["debug"]:
+            # If the user invoking this command is not in the same channel, return error
+            if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
+                return await self.respond(interaction.message, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
+
+            if ctx.voice_client:
+                if ctx.voice_client.channel != ctx.author.voice.channel:
+                    return await self.respond(interaction.message, embed=discord.Embed(title=":x: 機器人已經在一個語音頻道！", color=0xff0000))
+        
+        loop = self.bot.loop
+        try:
+            await self.respond(interaction.message, f"正在搜尋該曲目或網址：**{search}**", reply=False)
+            # Supports playing a playlist but it must be like https://youtube.com/playlist?
+            if "/playlist?" in search:
+                partial = functools.partial(YTDLSource.ytdl_playlist.extract_info, search, download=False)
+                data = await loop.run_in_executor(None, partial)
+                if data is None:
+                    return await self.respond(interaction.message, f"Couldn\'t find anything that matches `{search}`")
+                entries = data["entries"]
+                playlist = []
+                for pos, song in enumerate(entries):
+                    # Youtube only, guess no one would play other than Youtube
+                    url = "https://youtu.be/" + song["id"]
+                    title = song["title"]
+                    playlist.append({"pos": pos, "url": url, "title": title, "duration": int(song["duration"])})
+                # Sort the playlist variable to match with the order in YouTube
+                playlist.sort(key=lambda song: song["pos"])
+                # Add all songs to the pending list
+                for songs, entry in enumerate(playlist):
+                    try:
+                        duration = int(song["duration"])
+                    except:
+                        duration = 0
+                    await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": duration})
+                await self.respond(interaction.message, embed=discord.Embed(title=f":white_check_mark: 已將 `{songs+1}` 首歌曲加入至播放序列中", color=0x1eff00))
+            else:
+                # Just a single song
+                try:
+                    partial = functools.partial(YTDLSource.ytdl.extract_info, search, download=False)
+                    data = await loop.run_in_executor(None, partial)
+                except Exception as e:
+                    # Get the error message from dictionary, if it doesn't exist in dict, return the original error message
+                    message = error_messages.get(str(e), str(e))
+                    return await self.respond(interaction.message, embed=discord.Embed(title=f":x: 錯誤：{message}", color=0xff0000))
+                if "entries" in data:
+                    if len(data["entries"]) > 0:
+                        data = data["entries"][0]
+                    else:
+                        return await self.respond(interaction.message, embed=discord.Embed(title=f":x: 找不到任何匹配的內容或項目：`{search}`", color=0xff0000))
+                # Add the song to the pending list
+                try:
+                    duration = int(data["duration"])
+                except:
+                    duration = 0
+                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
+                await self.respond(interaction.message, embed=discord.Embed(title=f"已將歌曲 `{data['title']}` 加入至播放序列中", color=0x1eff00))
+            ctx.voice_state.stopped = False
+        except YTDLError as e:
+            await self.respond(interaction.message, embed=discord.Embed(title=f":x: 機器人處理該歌曲時發生錯誤：{str(e)}", color=0x1eff00))
+        self.completed = True
+
+class SearchView(discord.ui.View):
+    def __init__(self, bot, data, ctx, cog):
+        self.bot = bot
+        self.ctx = ctx
+        self.data = data
+        self.cog = cog
+        super().__init__(timeout=60)
+        self.add_item(SearchMenu(self.bot, data, cog, ctx))
+    async def on_timeout(self):
+        if not self.children[0].completed:
+            await self.message.edit(embed=discord.Embed(title="選擇時間已結束！", description=None, color=0xff0000), view=None)
+
+class PlayerControlView(discord.ui.View):
+    def __init__(self, bot, voice_state):
+        self.bot = bot
+        self.voice_state = voice_state
+        super().__init__(timeout=None)
+
+        self.children[4].label = "{}重覆播放".format("禁用" if self.voice_state._loop else "啟用")
+        self.children[5].label = "{}重覆播放序列".format("禁用" if self.voice_state.loopqueue else "啟用")
+    
+    @discord.ui.button(label="暫停", style=discord.ButtonStyle.primary, custom_id="0", emoji="⏸", disabled=False)
+    async def pause(self, button, interaction):
+        await interaction.response.defer()
+        if self.voice_state.is_playing and self.voice_state.voice.is_playing():
+            self.voice_state.voice.pause()
+            # Sets the pause time
+            self.voice_state.current.pause_time = time.time()
+            self.voice_state.current.paused = True
+        self.children[1].disabled = False
+        button.disabled = True
+        await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="繼續", style=discord.ButtonStyle.primary, custom_id="1", emoji="▶", disabled=True)
+    async def resume(self, button, interaction):
+        await interaction.response.defer()
+        if self.voice_state.is_playing and self.voice_state.voice.is_paused():
+            self.voice_state.voice.resume()
+            # Updates internal data for handling song progress that was paused
+            self.voice_state.current.pause_duration += time.time() - self.voice_state.current.pause_time
+            self.voice_state.current.pause_time = 0
+            self.voice_state.current.paused = False
+        self.children[0].disabled = False
+        button.disabled = True
+        await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="跳過", style=discord.ButtonStyle.primary, custom_id="2", emoji="⏭", disabled=False)
+    async def skip(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.skip()
+        #await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="停止", style=discord.ButtonStyle.primary, custom_id="3", emoji="⏹", disabled=False)
+    async def stop(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.songs.clear()
+
+        if self.voice_state.is_playing:
+            await self.voice_state.stop()
+            self.voice_state.stopped = True
+        #await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="重覆", style=discord.ButtonStyle.primary, custom_id="4", emoji="🔂", disabled=False)
+    async def loop(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.loop = not self.voice_state.loop
+        self.children[4].label = "{}重覆播放".format("禁用" if self.voice_state._loop else "啟用")
+        self.children[5].label = "{}重覆播放序列".format("禁用" if self.voice_state.loopqueue else "啟用")
+        await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="重覆序列", style=discord.ButtonStyle.primary, custom_id="5", emoji="🔂", disabled=False)
+    async def loopqueue(self, button, interaction):
+        await interaction.response.defer()
+        self.voice_state.loopqueue = not self.voice_state.loopqueue
+        try:
+            if self.voice_state.loopqueue:
+                await self.voice_state.songs.put({"url": self.voice_state.current.source.url, "title": self.voice_state.current.source.title, "user": self.voice_state.current.source.requester, "duration": self.voice_state.current.source.duration_int})
+        except:
+            pass
+        self.children[4].label = "{}重覆播放".format("禁用" if self.voice_state._loop else "啟用")
+        self.children[5].label = "{}重覆播放序列".format("禁用" if self.voice_state.loopqueue else "啟用")
+        await interaction.message.edit(view=self)
+        
 class Music(commands.Cog):
     # Get the total duration from the queue or playlist
     def getTotalDuration(self, data):
@@ -639,28 +857,28 @@ class Music(commands.Cog):
 
     # Function for responding to the user
     # reply=True will cause the bot to reply to the user (discord function)
-    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True):
+    async def respond(self, ctx, message: str=None, embed: discord.Embed=None, reply: bool=True, view=None):
         if isinstance(ctx, dict): 
             if reply:
                 if isinstance(ctx["ctx"], discord.ext.bridge.context.BridgeExtContext): # Prefix
-                    return await ctx["ctx"].reply(message, embed=embed, mention_author=False)
+                    return await ctx["ctx"].reply(message, embed=embed, mention_author=False, view=view)
                 else:
-                    return await ctx["ctx"].respond(message, embed=embed)
+                    return await ctx["ctx"].respond(message, embed=embed, view=view)
 
             else:
-                return await ctx["channel"].send(message, embed=embed)
+                return await ctx["channel"].send(message, embed=embed, view=view)
                     
         else: # Debugging
             if reply:
                 if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
-                    return await ctx.reply(message, embed=embed, mention_author=False)
+                    return await ctx.reply(message, embed=embed, mention_author=False, view=view)
                 else:
-                    return await ctx.respond(message, embed=embed)
+                    return await ctx.respond(message, embed=embed, view=view)
             else:
                 if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
-                    return await ctx.send(message, embed=embed)
+                    return await ctx.send(message, embed=embed, view=view)
                 else:
-                    return await ctx.respond(message, embed=embed)
+                    return await ctx.respond(message, embed=embed, view=view)
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -670,12 +888,12 @@ class Music(commands.Cog):
     def get_voice_state(self, ctx):
         state = self.voice_states.get(ctx.guild.id)
         if not state:
-            state = VoiceState(self.bot, ctx)
+            state = VoiceState(self.bot, ctx, self)
             self.voice_states[ctx.guild.id] = state
         # When invoking this function, check whether the audio player task is done
         # If it is done, recreate the task
         if state.audio_player and state.audio_player.done():
-            state.recreate_bg_task(ctx)
+            state.recreate_bg_task(ctx, self)
         return state
 
     # Stop all async tasks for each voice state
@@ -713,11 +931,11 @@ class Music(commands.Cog):
         if str(error) == "該指令無法在私訊中使用！":
             return await ctx.send("該指令無法在私訊中使用！")
         await ctx.send(f"錯誤：{error}")
-        if ctx.voice_state:
+        if hasattr(ctx, "voice_state") and ctx.voice_state:
             if ctx.voice_state.debug["debug_log"]:
                 await ctx.send("Debug file", file=discord.File(io.BytesIO(base64.b64encode(formatted_error.encode("utf-8"))), f"{ctx.guild.id}_error.txt"))
 
-    @bridge.bridge_command(name='join', invoke_without_subcommand=True)
+    @bridge.bridge_command(name='join', invoke_without_subcommand=True, description="加入目前的語音頻道")
     async def _join(self, ctx):
         # Joins the channel
 
@@ -760,7 +978,8 @@ class Music(commands.Cog):
             shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
         await ctx.me.edit(deafen=True)
 
-    @bridge.bridge_command(name='summon')
+    @bridge.bridge_command(name='summon', description="召喚機器人到目前的語音頻道 (需要\"移動成員\"權限)")
+    #async def _summon(self, ctx, *, channel:discord.Option(discord.VoiceChannel, "召喚機器人到目前的語音頻道 (需要\"移動成員\"權限)")=None):
     async def _summon(self, ctx, *, channel=None):
         # Summon the bot to other channel or the current channel
 
@@ -806,7 +1025,7 @@ class Music(commands.Cog):
             except:
                 await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人需要修改禁音權限！", color=0xff0000))
 
-    @bridge.bridge_command(name='leave', aliases=['disconnect', 'dc'])
+    @bridge.bridge_command(name='leave', aliases=['disconnect', 'dc'], description="離開語音頻道")
     async def _leave(self, ctx):
         # Clears the queue and leave the channel
 
@@ -823,7 +1042,8 @@ class Music(commands.Cog):
         await ctx.voice_state.stop(leave=True)
         del self.voice_states[ctx.guild.id]
 
-    @bridge.bridge_command(name='volume', aliases=['v'])
+    @bridge.bridge_command(name='volume', aliases=['v'], description="顯示/調較音量")
+    #async def _volume(self, ctx, volume:discord.Option(int, "音量 (0-100)")=None):
     async def _volume(self, ctx, volume=None):
         # If the parameter is set, try to parse it as an integer
         try:
@@ -853,14 +1073,14 @@ class Music(commands.Cog):
             # Return the current volume
             return await self.respond(ctx.ctx, embed=discord.Embed(title=f"目前音量: `{int(ctx.voice_state.volume*100)}`%", color=0x1eff00))
 
-    @bridge.bridge_command(name='now', aliases=['current', 'playing'])
+    @bridge.bridge_command(name='now', aliases=['current', 'playing'], description="顯示正在播放的歌曲")
     async def _now(self, ctx):
         # Display currently playing song
         if ctx.voice_state.current is None:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 這個伺服器沒有任何正在播放的音樂！", color=0xff0000))
         await self.respond(ctx.ctx, embed=ctx.voice_state.current.create_embed("now"))
 
-    @bridge.bridge_command(name='pause')
+    @bridge.bridge_command(name='pause', description="暫停歌曲")
     async def _pause(self, ctx):
         # Pauses the player
         if not ctx.debug["debug"]:
@@ -877,7 +1097,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
 
-    @bridge.bridge_command(name='resume', aliases=['r'])
+    @bridge.bridge_command(name='resume', aliases=['r'], description="繼續播放已暫停的音樂")
     async def _resume(self, ctx):
         # Resumes the bot
         if not ctx.debug["debug"]:
@@ -895,7 +1115,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 目前沒有任何歌曲正在播放！", color=0xff0000))
 
-    @bridge.bridge_command(name='stop')
+    @bridge.bridge_command(name='stop', description="移除所有在序列的歌曲並停止播放")
     async def _stop(self, ctx):
         # Stops the bot and clears the queue
         if not ctx.debug["debug"]:
@@ -909,7 +1129,7 @@ class Music(commands.Cog):
             ctx.voice_state.stopped = True
             await self.respond(ctx.ctx, embed=discord.Embed(title=":record_button: 已清除並停止所有音樂！", color=0x1eff00))
 
-    @bridge.bridge_command(name='skip', aliases=['s'])
+    @bridge.bridge_command(name='skip', aliases=['s'], description="跳過目前的歌曲")
     async def _skip(self, ctx):
         # Skips the current song
         if not ctx.debug["debug"]:
@@ -922,7 +1142,8 @@ class Music(commands.Cog):
         await self.respond(ctx.ctx, embed=discord.Embed(title=":next_track: 已跳過當前音樂！", color=0x1eff00))
         ctx.voice_state.skip()
 
-    @bridge.bridge_command(name='queue', aliases=["q"])
+    @bridge.bridge_command(name='queue', aliases=["q"], description="顯示歌曲序列")
+    #async def _queue(self, ctx, *, page:discord.Option(int, "頁面")=None):
     async def _queue(self, ctx, *, page=None):
         # Shows the queue, add page number to view different pages
         if page is not None:
@@ -940,7 +1161,7 @@ class Music(commands.Cog):
             await asyncio.sleep(1)
         return await self.respond(ctx.ctx, embed=self.queue_embed(ctx.voice_state.songs, page, f"正在播放", f"[**{ctx.voice_state.current.source.title}**]({ctx.voice_state.current.source.url}) (剩餘{YTDLSource.parse_duration(ctx.voice_state.current.source.duration_int - int(time.time() - ctx.voice_state.current.starttime - ctx.voice_state.current.pause_duration))})", "url"))
 
-    @bridge.bridge_command(name='shuffle')
+    @bridge.bridge_command(name='shuffle', description="打亂歌曲序列")
     async def _shuffle(self, ctx):
         # Shuffles the queue
         # If the user invoking this command is not in the same channel, return error
@@ -952,7 +1173,8 @@ class Music(commands.Cog):
         ctx.voice_state.songs.shuffle()
         await self.respond(ctx.ctx, embed=discord.Embed(title=":cyclone: 已打亂所有等待播放的音樂排序！", color=0x1eff00))
 
-    @bridge.bridge_command(name='remove')
+    @bridge.bridge_command(name='remove', description="從序列移除歌曲")
+    #async def _remove(self, ctx, index:discord.Option(int, "歌曲位置")=None):
     async def _remove(self, ctx, index=None):
         if index is None:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請輸入有效的歌曲號碼！", color=0xff0000))
@@ -972,7 +1194,7 @@ class Music(commands.Cog):
         ctx.voice_state.songs.remove(index - 1)
         await self.respond(ctx.ctx, embed=discord.Embed(title=f":white_check_mark: 已刪除第`{index}`首歌！", color=0x1eff00))
 
-    @bridge.bridge_command(name='loop')
+    @bridge.bridge_command(name='loop', description="調較重覆播放歌曲")
     async def _loop(self, ctx):
         # Toggle the looping of the current song
         if not ctx.debug["debug"]:
@@ -981,11 +1203,13 @@ class Music(commands.Cog):
                 return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入語音頻道或同一個語音頻道！", color=0xff0000))
             if ctx.voice_state.voice.channel != ctx.author.voice.channel:
                 return
+
         # Inverse boolean value to loop and unloop.
         ctx.voice_state.loop = not ctx.voice_state.loop
         await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loop else "關閉") + "歌曲循環", color=0x1eff00))
 
-    @bridge.bridge_command(name='play', aliases=["p"])
+    @bridge.bridge_command(name='play', aliases=["p"], description="播放歌曲或歌單")
+    #async def _play(self, ctx, *, search:discord.Option(str, "URL 或關鍵字")=None):
     async def _play(self, ctx, *, search=None):
         # Plays a song, mostly from Youtube
         """Plays a song.
@@ -1064,8 +1288,9 @@ class Music(commands.Cog):
         except YTDLError as e:
             await self.respond(ctx.ctx, embed=discord.Embed(title=f":x: 機器人處理該歌曲時發生錯誤：{str(e)}", color=0x1eff00))
             
-    @bridge.bridge_command(name='search')
-    async def search(self, ctx, *, keyword = None):
+    @bridge.bridge_command(name='search', description="從Youtube搜尋歌曲")
+    #async def search(self, ctx, *, keyword:discord.Option(str, "關鍵字")=None):
+    async def search(self, ctx, *, keyword=None):
         # Search from Youtube and returns 10 songs
         if keyword == None:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 請提供關鍵字以搜尋！", color=0xff0000))
@@ -1074,7 +1299,7 @@ class Music(commands.Cog):
         data = YTDLSource.ytdl_playlist.extract_info(keyword, download=False)
         result = []
         # Get 10 songs from the result
-        for entry in data["entries"]:
+        for index, entry in enumerate(data["entries"]):
             try:
                 duration = YTDLSource.parse_duration(int(entry.get('duration')))
             except:
@@ -1083,7 +1308,8 @@ class Music(commands.Cog):
                 {
                     "title": entry.get("title"),
                     "duration": duration,
-                    "url": entry.get('webpage_url', "https://youtu.be/" + entry.get('id'))
+                    "url": entry.get('webpage_url', "https://youtu.be/" + entry.get('id')),
+                    "index": index
                 }
             )
         embed = discord.Embed(  title=f'`{originalkeyword}`的搜尋結果：',
@@ -1093,42 +1319,16 @@ class Music(commands.Cog):
         for count, entry in enumerate(result):
             embed.add_field(name=f'{count+1}. {entry["title"]}', value=f'[影片網址 / Click Here]({entry["url"]})' + "\n影片時長：" + entry["duration"] + "\n", inline=False)
         # Send the message of the results
-        message = await self.respond(ctx.ctx, embed=embed)
+        view = SearchView(self.bot, result, ctx, self)
+
+        message = await self.respond(ctx.ctx, embed=embed, view=view)
         if isinstance(message, discord.Interaction):
             message = await message.original_message()
-        reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "❌"]
-        # Add reactions to that message
-        for x in range(count + 2):
-            await message.add_reaction(reaction_list[x])
-        # Function for checking whether the responding user is the same user, the emoji is in the list, and the message is the same message
-        def check(reaction, user):
-            if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
-                return user == ctx.message.author and str(reaction.emoji) in reaction_list and reaction.message.id == message.id
-            else:
-                return user == ctx.user and str(reaction.emoji) in reaction_list and reaction.message.id == message.id
+        view.message = message
 
-        try:
-            # Wait for response, if no response after 1 minute, return message of timed out
-            reaction, user = await self.bot.wait_for('reaction_add', timeout=60, check=check)
-            await message.clear_reactions()
-            if reaction.emoji == "❌":
-                return await message.edit(embed=discord.Embed(title="已取消搜尋", description=None, color=discord.Color.green()))
-            # Edit the message to reduce its size
-            await message.edit(embed=discord.Embed(title="已選擇結果：", description=result[reaction_list.index(reaction.emoji)]["title"], color=discord.Color.green()))
-            # Invoke the play command
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 你需要先進入或指定一個語音頻道！", color=0xff0000))
-
-            if ctx.voice_client:
-                if ctx.voice_client.channel != ctx.author.voice.channel:
-                    return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 機器人已經在其他語音頻道！", color=0xff0000))
-            await self._play(ctx=ctx, search=result[reaction_list.index(reaction.emoji)]["url"])
-
-        except asyncio.TimeoutError:
-            # Timed out after 1 minute
-            await message.edit(embed=discord.Embed(title='選擇時間已結束！', color=0xff0000))
         
-    @bridge.bridge_command(name='musicreload')
+        
+    @bridge.bridge_command(name='musicreload', description="重新載入機器人")
     async def musicreload(self, ctx):
         # Disconnect the bot and delete voice state from internal memory in case something goes wrong
         try:
@@ -1146,7 +1346,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
         await self.respond(ctx.ctx, embed=discord.Embed(title=":white_check_mark: 機器人己重新載入！", color=discord.Color.green()))
     
-    @bridge.bridge_command(name="loopqueue", aliases=['lq'])
+    @bridge.bridge_command(name="loopqueue", aliases=['lq'], description="調較重覆播放序列")
     async def loopqueue(self, ctx):
         # Loops the queue
         if not ctx.debug["debug"]:
@@ -1164,7 +1364,7 @@ class Music(commands.Cog):
             pass
         await self.respond(ctx.ctx, embed=discord.Embed(title="已" + ("啟用" if ctx.voice_state.loopqueue else "關閉") + "歌單循環", color=0x1eff00))
     
-    @commands.command(name="playfile", aliases=["pf"])
+    @commands.command(name="playfile", aliases=["pf"], description="播放上傳的檔案")
     async def playfile(self, ctx, *, title=None):
         # Plays uploaded file
         if not ctx.debug["debug"]:
@@ -1213,7 +1413,8 @@ class Music(commands.Cog):
                     desc += f'{self.bot.get_guild(guild_id).name} / {guild_id}\n'
             return await self.respond(ctx.ctx, embed=discord.Embed(title=f"正在使用音樂機器人的伺服器: {str(server_count)}", description=desc[:-1]))
 
-    @bridge.bridge_command(name="seek")
+    @bridge.bridge_command(name="seek", description="跳至指定位置")
+    #async def seek(self, ctx, seconds:discord.Option(str, "Number of seconds, fast forward, backward or in this format: 1h2m3s")=None):
     async def seek(self, ctx, seconds=None):
         if not ctx.debug["debug"]:
             # If the user invoking this command is not in the same channel, return error
@@ -1401,7 +1602,7 @@ class Music(commands.Cog):
                 data = json.dumps(data, indent=4, ensure_ascii=False)
                 await ctx.send(file=discord.File(io.BytesIO(data.encode("utf-8")), f"playlist_{ctx.guild.id}.json"))"""
 
-    @bridge.bridge_command(name="playlist")
+    @bridge.bridge_command(name="playlist", description="管理播放清單")
     async def playlist_func(self, ctx, *, args=None):
         file = f"./music/playlist_{ctx.author.id}.json"
         if os.path.isfile(file):
@@ -1547,7 +1748,7 @@ class Music(commands.Cog):
             os.mkdir("./music")
         open(file, "w", encoding="utf-8").write(json.dumps(data))
 
-    @bridge.bridge_command(name="musicversion")
+    @bridge.bridge_command(name="musicversion", description="顯示cog目前的版本")
     async def musicversion(self, ctx):
         await self.respond(ctx.ctx, embed=discord.Embed(title="Discord 音樂 Cog v1.8.0").add_field(name="作者", value="<@127312771888054272>").add_field(name="Cog Github 連結", value="[連結](https://github.com/benwong01f611/discord-music-cog)"))
 
