@@ -1,3 +1,8 @@
+v1.8.2
+- Fixed command "stop" will break the bot
+- Fixed a typo in tc version
+- Fixed the version number is not updated in tc version
+
 v1.8.1
 - Command "search" will now use menu to select options instead of giving reaction
 - Player can now be controlled with buttons

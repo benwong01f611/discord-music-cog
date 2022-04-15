@@ -566,9 +566,6 @@ class VoiceState:
         # Clear the queue
         self.songs.clear()
         self.current = None
-        if self.volume_updater and not self.volume_updater.done():
-            self.volume_updater.cancel()
-        self.volume_updater = None
         if self.voice:
             # Stops the voice
             self.voice.stop()
@@ -582,15 +579,19 @@ class VoiceState:
                 except:
                     pass
                 self.voice = None
-        if self.audio_player and not self.audio_player.done():
-            self.audio_player.cancel()
-            try:
-                await self.message.delete()
-            except:
-                pass
         if leave:
+            if self.audio_player and not self.audio_player.done():
+                self.audio_player.cancel()
+                try:
+                    await self.message.delete()
+                except:
+                    pass
             if self.listener_task and not self.listener_task.done():
                 self.listener_task.cancel()
+            if self.volume_updater and not self.volume_updater.done():
+                self.volume_updater.cancel()
+                self.volume_updater = None
+    
 class SearchMenu(discord.ui.Select):
     def __init__(self, bot, options_raw, cog, ctx):
         self.bot = bot
@@ -598,7 +599,7 @@ class SearchMenu(discord.ui.Select):
         self.ctx = ctx
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         options = [discord.SelectOption(label=data["title"], description=f"影片長度: {data['duration']}", value=data["index"], emoji=reaction_list[data["index"]]) for data in options_raw]
-        options.append(discord.SelectOption(label="取消", description="取搜尋", value=11, emoji="❌"))
+        options.append(discord.SelectOption(label="取消", description="取消搜尋", value=11, emoji="❌"))
         self.data = options_raw
         self.completed = False
         super().__init__(
@@ -1750,7 +1751,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="顯示cog目前的版本")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord 音樂 Cog v1.8.0").add_field(name="作者", value="<@127312771888054272>").add_field(name="Cog Github 連結", value="[連結](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord 音樂 Cog v1.8.2").add_field(name="作者", value="<@127312771888054272>").add_field(name="Cog Github 連結", value="[連結](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

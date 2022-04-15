@@ -568,9 +568,6 @@ class VoiceState:
         # Clear the queue
         self.songs.clear()
         self.current = None
-        if self.volume_updater and not self.volume_updater.done():
-            self.volume_updater.cancel()
-        self.volume_updater = None
         if self.voice:
             # Stops the voice
             self.voice.stop()
@@ -584,15 +581,18 @@ class VoiceState:
                 except:
                     pass
                 self.voice = None
-        if self.audio_player and not self.audio_player.done():
-            self.audio_player.cancel()
-            try:
-                await self.message.delete()
-            except:
-                pass
         if leave:
+            if self.audio_player and not self.audio_player.done():
+                self.audio_player.cancel()
+                try:
+                    await self.message.delete()
+                except:
+                    pass
             if self.listener_task and not self.listener_task.done():
                 self.listener_task.cancel()
+            if self.volume_updater and not self.volume_updater.done():
+                self.volume_updater.cancel()
+                self.volume_updater = None
 
 class SearchMenu(discord.ui.Select):
     def __init__(self, bot, options_raw, cog, ctx):
@@ -1773,7 +1773,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.1").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.2").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))
