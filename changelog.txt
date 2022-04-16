@@ -1,3 +1,7 @@
+v1.8.3
+- Fixed command "summon" cannot find channel
+- Authors can now use "summon" even without "Move member" permission
+
 v1.8.2
 - Fixed command "stop" will break the bot
 - Fixed a typo in tc version

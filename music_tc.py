@@ -982,6 +982,9 @@ class Music(commands.Cog):
     @bridge.bridge_command(name='summon', description="召喚機器人到目前的語音頻道 (需要\"移動成員\"權限)")
     #async def _summon(self, ctx, *, channel:discord.Option(discord.VoiceChannel, "召喚機器人到目前的語音頻道 (需要\"移動成員\"權限)")=None):
     async def _summon(self, ctx, *, channel=None):
+        # Only allow members with "Move member" permission to use this command
+        if not ctx.author.guild_permissions.move_members and ctx.author.id not in authors:
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 只有擁有\"移動成員\"權限的用戶才能使用本指令！", color=0xff0000))
         # Summon the bot to other channel or the current channel
 
         # Didn't join a channel or specify a channel to join
@@ -995,13 +998,10 @@ class Music(commands.Cog):
             try:
                 channel_find = ctx.guild.get_channel(int(channel[2:-1]))
             except:
-                if channel_find is None and not ctx.author.voice:
+                if not ctx.author.voice:
                     return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000))
-        if channel_find is None:
+        if channel_find is None and ctx.author.voice.channel is None:
             return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 找不到該頻道！", color=0xff0000))
-        # Only allow members with "Move member" permission to use this command
-        if not ctx.author.guild_permissions.move_members:
-            return await self.respond(ctx.ctx, embed=discord.Embed(title=":x: 只有擁有\"移動成員\"權限的用戶才能使用本指令！", color=0xff0000))
         
         destination = channel_find or ctx.author.voice.channel
 
@@ -1751,7 +1751,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="顯示cog目前的版本")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord 音樂 Cog v1.8.2").add_field(name="作者", value="<@127312771888054272>").add_field(name="Cog Github 連結", value="[連結](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord 音樂 Cog v1.8.3").add_field(name="作者", value="<@127312771888054272>").add_field(name="Cog Github 連結", value="[連結](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

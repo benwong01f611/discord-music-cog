@@ -984,6 +984,9 @@ class Music(commands.Cog):
     @bridge.bridge_command(name='summon', description="Summon the bot to current voice channel (Requires Move Member permission)")
     #async def _summon(self, ctx, *, channel:discord.Option(discord.VoiceChannel, "Summon the bot to current voice channel (Requires Move Member permission)")=None):
     async def _summon(self, ctx, *, channel=None):
+        # Only allow members with "Move member" permission to use this command
+        if not ctx.author.guild_permissions.move_members and ctx.author.id not in authors:
+            return await self.respond(ctx.ctx, "Only members with \"Move Member\" permission are allowed to use this command.")
         # Summon the bot to other channel or the current channel
 
         # Didn't join a channel or specify a channel to join
@@ -997,13 +1000,10 @@ class Music(commands.Cog):
             try:
                 channel_find = ctx.guild.get_channel(int(channel[2:-1]))
             except:
-                if channel_find is None and not ctx.author.voice:
+                if not ctx.author.voice:
                     return await self.respond(ctx.ctx, "Unable to find the specific channel.")
-        if channel_find is None:
+        if channel_find is None and ctx.author.voice.channel is None:
             return await self.respond(ctx.ctx, "Unable to find the specific channel.")
-        # Only allow members with "Move member" permission to use this command
-        if not ctx.author.guild_permissions.move_members:
-            return await self.respond(ctx.ctx, "Only members with \"Move Member\" permission are allowed to use this command.")
         
         destination = channel_find or ctx.author.voice.channel
 
@@ -1773,7 +1773,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.2").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.3").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))
