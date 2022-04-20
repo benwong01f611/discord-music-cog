@@ -257,12 +257,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return ':'.join(durations)
 
 class Song:
-    __slots__ = ('source', 'requester', 'starttime', 'pause_time', 'pause_duration', 'paused', 'isFile')
+    __slots__ = ('source', 'requester', 'starttime', 'pause_time', 'pause_duration', 'paused', 'isFile', 'isDirectLink', 'time_invoke_seek')
 
     # starttime stores when does the song start
     # pause_duration stores how long does the song being paused, updates when the song resumes
     # pause_time stores when does the song paused, used for calculating the pause_duration
-    def __init__(self, source, isFile=False): 
+    def __init__(self, source, isFile=False, isDirectLink=False): 
         self.source = source
         self.requester = source.requester
         self.starttime = None
@@ -270,6 +270,8 @@ class Song:
         self.pause_time = 0
         self.paused = False
         self.isFile = isFile
+        self.isDirectLink = isDirectLink
+        self.time_invoke_seek = -1
 
     def create_embed(self, status: str):
         # If a new song is being played, it will simply display how long the song is
@@ -287,6 +289,8 @@ class Song:
             embed.add_field(name='Uploader', value=f"[{self.source.uploader}]({self.source.uploader_url})")
             embed.add_field(name='URL', value=f"[Click]({self.source.url})")
             embed.set_thumbnail(url=self.source.thumbnail)
+        if self.isDirectLink:
+            embed.add_field(name='URL', value=f"[Click]({self.source.url})")
 
         return embed
 
@@ -378,18 +382,19 @@ class VoiceState:
         return self.voice and self.current
     
     # Function for seeking
-    async def seek(self, seconds, isLocal):
+    async def seek(self, seconds, isLocal, isDirectLink):
+        # Stop the current playing song
+        self.voice.stop()
         # Recreate ffmpeg object
-        if isLocal:
+        if isLocal or isDirectLink:
             self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, seek=seconds)
         else:
             self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester, seek=seconds)
         # Update volume
         self.current.source.volume = self._volume
-        # Stop the current playing song
-        self.voice.stop()
         # Play the seeked song
         self.voice.play(self.current.source, after=self.play_next_song)
+        self.current.time_invoke_seek = time.time()
         # Update the starttime since the song was seeked
         self.current.starttime = time.time() - self.seek_time
         self.volume_updater.cancel()
@@ -405,6 +410,10 @@ class VoiceState:
                 self.current.source.volume = self._volume
     
     async def create_song_source(self, ctx, url, title=None, requester=None, seek=None):
+        try:
+            domain = url.split("/")[2]
+        except:
+            domain = ""
         if "local@" in url:
             # It is a local file
             url = url[6:]
@@ -418,8 +427,20 @@ class VoiceState:
                 return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url, before_options="-ss " + YTDLSource.parse_duration_raw(seek)), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}, seek=seek), True)
             else:
                 return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
-        else:
+        elif "youtube" in domain or "youtu.be" in domain:
             return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
+        else:
+            # Direct Link
+            try:
+                # Try to get the duration of the uploaded file
+                duration = str(int(float(subprocess.check_output(f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{url}\"", shell=True).decode("ascii").replace("\r", "").replace("\n", ""))))
+            except:
+                return "error"
+            # Return the song object with ffmpeg
+            if seek is not None:
+                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url, before_options="-ss " + YTDLSource.parse_duration_raw(seek)), data={'duration': duration, 'title': title, 'url': url, 'requester': requester}, seek=seek), True, True)
+            else:
+                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url), data={'duration': duration, 'title': title, 'url': url, 'requester': requester}), True, True)
 
     async def check_user_listening(self):
         while True:
@@ -467,10 +488,15 @@ class VoiceState:
         while True:
             self.next.clear()
             if self.forbidden:
-                if "local@" in self.current.source.url:
-                    self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
-                else:
+                #if "local@" in self.current.source.url:
+                try:
+                    domain = self.current["url"].split("/")[2]
+                except:
+                    domain = ""
+                if "youtube" in domain or "youtu.be" in domain:
                     self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
+                else:
+                    self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
             else:
                 if not self.loop:
                     # Try to get the next song within 2 minutes.
@@ -485,10 +511,15 @@ class VoiceState:
                             # Get the next song
                             self.current = await self.songs.get()
                             # If the url contains local@, it is a local file
-                            if "local@" in self.current["url"]:
-                                self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
-                            else:
+                            #if "local@" in self.current["url"]:
+                            try:
+                                domain = self.current["url"].split("/")[2]
+                            except:
+                                domain = ""
+                            if "youtube" in domain or "youtu.be" in domain:
                                 self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
+                            else:
+                                self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
                             if self.current != "error":
                                 # If loop queue, put the current song back to the end of the queue
                                 if self.loopqueue:
@@ -504,10 +535,15 @@ class VoiceState:
                         try:
                             async with timeout(120):  # 2 minutes
                                 self.current = await self.songs.get()
-                                if "local@" in self.current["url"]:
-                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
-                                else:
+                                #if "local@" in self.current["url"]:
+                                try:
+                                    domain = self.current["url"].split("/")[2]
+                                except:
+                                    domain = ""
+                                if "youtube" in domain or "youtu.be" in domain:
                                     self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
+                                else:
+                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"])
                                 if self.current != "error":
                                     self.skipped = False
                                     self.stopped = False
@@ -515,10 +551,15 @@ class VoiceState:
                             return await self.stop(leave=True)
                     else:
                         # Looping, get the looped song
-                        if "local@" in self.current.source.url:
-                            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
-                        else:
+                        #if "local@" in self.current.source.url:
+                        try:
+                            domain = self.current.source.url.split("/")[2]
+                        except:
+                            domain = ""
+                        if "youtube" in domain or "youtu.be" in domain:
                             self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
+                        else:
+                            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester)
             if self.current != "error":
                 self.current.source.volume = self._volume
                 await asyncio.sleep(0.25)
@@ -655,7 +696,6 @@ class SearchMenu(discord.ui.Select):
         if voice_client:
             if voice_client.channel != self.ctx.author.voice.channel:
                 return await  self.respond(interaction.message, 'Bot is already in a voice channel.')
-        #await self.cog._play(ctx=self.ctx, search=self.data[int(self.values[0])]["url"])
         ctx = self.ctx
         search = self.data[int(self.values[0])]["url"]
         if search == None:
@@ -1291,24 +1331,37 @@ class Music(commands.Cog):
             else:
                 # Just a single song
                 try:
-                    partial = functools.partial(YTDLSource.ytdl.extract_info, search, download=False)
-                    data = await loop.run_in_executor(None, partial)
-                except Exception as e:
-                    # Get the error message from dictionary, if it doesn't exist in dict, return the original error message
-                    message = error_messages.get(str(e), str(e))
-                    return await self.respond(ctx.ctx, f"Error: {message}")
-                if "entries" in data:
-                    if len(data["entries"]) > 0:
-                        data = data["entries"][0]
-                    else:
-                        return await self.respond(ctx.ctx, f"Couldn\'t find anything that matches `{search}`")
-                # Add the song to the pending list
-                try:
-                    duration = int(data["duration"])
+                    domain = search.split("/")[2]
                 except:
-                    duration = 0
-                await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
-                await self.respond(ctx.ctx, f"Enqueued {data['title']}")
+                    domain = "youtube"
+                if "youtube" not in domain and "youtu.be" not in domain:
+                    # Direct link
+                    try:
+                        title = search.split("/")[-1]
+                        await ctx.voice_state.songs.put({"url": search, "title": title, "user": ctx.author, "duration": int(float(subprocess.check_output(f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{search}\"", shell=True).decode("ascii").replace("\r", "").replace("\n", "")))})
+                    except:
+                        return await self.respond(ctx.ctx, "Unable to add this song, maybe it is not an audio file?")
+                    await self.respond(ctx.ctx, 'Enqueued {}'.format(title.replace("_", "\\_")))
+                else:
+                    try:
+                        partial = functools.partial(YTDLSource.ytdl.extract_info, search, download=False)
+                        data = await loop.run_in_executor(None, partial)
+                    except Exception as e:
+                        # Get the error message from dictionary, if it doesn't exist in dict, return the original error message
+                        message = error_messages.get(str(e), str(e))
+                        return await self.respond(ctx.ctx, f"Error: {message}")
+                    if "entries" in data:
+                        if len(data["entries"]) > 0:
+                            data = data["entries"][0]
+                        else:
+                            return await self.respond(ctx.ctx, f"Couldn\'t find anything that matches `{search}`")
+                    # Add the song to the pending list
+                    try:
+                        duration = int(data["duration"])
+                    except:
+                        duration = 0
+                    await ctx.voice_state.songs.put({"url": data["webpage_url"], "title": data["title"], "user": ctx.author, "duration": duration})
+                    await self.respond(ctx.ctx, f"Enqueued {data['title']}")
             ctx.voice_state.stopped = False
         except YTDLError as e:
             await self.respond(ctx.ctx, f"An error occurred while processing this request: {str(e)}")
@@ -1444,6 +1497,7 @@ class Music(commands.Cog):
             if not ctx.author.voice or not ctx.author.voice.channel or (ctx.voice_state.voice and ctx.author.voice.channel != ctx.voice_state.voice.channel):
                 return await self.respond(ctx.ctx, "You are not connected to any voice channel or the same voice channel.")
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
+            ctx.voice_state.seeking = True
             try:
                 # Google this regular expression by yourself
                 # It will parse which hour, minute, second to seek to
@@ -1477,10 +1531,13 @@ class Music(commands.Cog):
                 return await self.respond(ctx.ctx, "Unable to parse seconds to seek!")
             if seconds is None:
                 return await self.respond(ctx.ctx, "Please provide seconds to seek to!")
-            ctx.voice_state.seeking = True
             ctx.voice_state.seek_time = seconds
             current = ctx.voice_state.current
-            await ctx.voice_state.seek(seconds, "local@" in current.source.url)
+            try:
+                domain = current.source.url.split("/")[2]
+            except:
+                domain = ""
+            await ctx.voice_state.seek(seconds, "local@" in current.source.url, not ("youtube" in domain or "youtu.be" in domain))
             await self.respond(ctx.ctx, f"Seeked to {seconds}s")
         else:
             await self.respond(ctx.ctx, "There is no songs playing right now.")
@@ -1773,7 +1830,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.3").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.4").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

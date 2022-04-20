@@ -1,3 +1,7 @@
+v1.8.4
+- Command "play" now supports playing audio file with URL
+    - That means you can even play full Shrek movie if you have a direct link to the movie file
+
 v1.8.3
 - Fixed command "summon" cannot find channel
 - Authors can now use "summon" even without "Move member" permission
