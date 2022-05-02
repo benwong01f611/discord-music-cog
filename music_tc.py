@@ -855,7 +855,7 @@ class PlayerControlView(discord.ui.View):
         self.children[4].label = "{}重覆播放序列".format("禁用" if self.voice_state.loopqueue else "啟用")
         await interaction.message.edit(view=self)
     
-    @discord.ui.button(label="Queue", style=discord.ButtonStyle.primary, custom_id="5", emoji="📜", disabled=False)
+    @discord.ui.button(label="播放序列", style=discord.ButtonStyle.primary, custom_id="5", emoji="📜", disabled=False)
     async def queue(self, button, interaction):
         # Shows the queue, add page number to view different pages
         page = 1
