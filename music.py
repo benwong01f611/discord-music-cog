@@ -785,43 +785,43 @@ class PlayerControlView(discord.ui.View):
         self.bot = bot
         self.voice_state = voice_state
         super().__init__(timeout=None)
-
-        self.children[4].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
-        self.children[5].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
+        self.children[3].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
+        self.children[4].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
     
     @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, custom_id="0", emoji="⏸", disabled=False)
     async def pause(self, button, interaction):
+        if interaction.user not in self.voice_state.voice.channel.members:
+            return await interaction.response.send_message("You are not in the same voice channel.", ephemeral=True)
         await interaction.response.defer()
         if self.voice_state.is_playing and self.voice_state.voice.is_playing():
             self.voice_state.voice.pause()
             # Sets the pause time
             self.voice_state.current.pause_time = time.time()
             self.voice_state.current.paused = True
-        self.children[1].disabled = False
-        button.disabled = True
-        await interaction.message.edit(view=self)
-    
-    @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary, custom_id="1", emoji="▶", disabled=True)
-    async def resume(self, button, interaction):
-        await interaction.response.defer()
-        if self.voice_state.is_playing and self.voice_state.voice.is_paused():
+            self.children[0].emoji = "▶"
+            self.children[0].label = "Resume"
+        elif self.voice_state.is_playing and self.voice_state.voice.is_paused():
             self.voice_state.voice.resume()
             # Updates internal data for handling song progress that was paused
             self.voice_state.current.pause_duration += time.time() - self.voice_state.current.pause_time
             self.voice_state.current.pause_time = 0
             self.voice_state.current.paused = False
-        self.children[0].disabled = False
-        button.disabled = True
+            self.children[0].emoji = "⏸"
+            self.children[0].label = "Pause"
         await interaction.message.edit(view=self)
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary, custom_id="2", emoji="⏭", disabled=False)
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary, custom_id="1", emoji="⏭", disabled=False)
     async def skip(self, button, interaction):
+        if interaction.user not in self.voice_state.voice.channel.members:
+            return await interaction.response.send_message("You are not in the same voice channel.", ephemeral=True)
         await interaction.response.defer()
         self.voice_state.skip()
         #await interaction.message.edit(view=self)
     
-    @discord.ui.button(label="Stop", style=discord.ButtonStyle.primary, custom_id="3", emoji="⏹", disabled=False)
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.primary, custom_id="2", emoji="⏹", disabled=False)
     async def stop(self, button, interaction):
+        if interaction.user not in self.voice_state.voice.channel.members:
+            return await interaction.response.send_message("You are not in the same voice channel.", ephemeral=True)
         await interaction.response.defer()
         self.voice_state.songs.clear()
 
@@ -830,16 +830,20 @@ class PlayerControlView(discord.ui.View):
             self.voice_state.stopped = True
         #await interaction.message.edit(view=self)
 
-    @discord.ui.button(label="Loop", style=discord.ButtonStyle.primary, custom_id="4", emoji="🔂", disabled=False)
+    @discord.ui.button(label="Loop", style=discord.ButtonStyle.primary, custom_id="3", emoji="🔂", disabled=False)
     async def loop(self, button, interaction):
+        if interaction.user not in self.voice_state.voice.channel.members:
+            return await interaction.response.send_message("You are not in the same voice channel.", ephemeral=True)
         await interaction.response.defer()
         self.voice_state.loop = not self.voice_state.loop
-        self.children[4].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
-        self.children[5].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
+        self.children[3].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
+        self.children[4].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
         await interaction.message.edit(view=self)
     
-    @discord.ui.button(label="Loop Queue", style=discord.ButtonStyle.primary, custom_id="5", emoji="🔂", disabled=False)
+    @discord.ui.button(label="Loop Queue", style=discord.ButtonStyle.primary, custom_id="4", emoji="🔂", disabled=False)
     async def loopqueue(self, button, interaction):
+        if interaction.user not in self.voice_state.voice.channel.members:
+            return await interaction.response.send_message("You are not in the same voice channel.", ephemeral=True)
         await interaction.response.defer()
         self.voice_state.loopqueue = not self.voice_state.loopqueue
         try:
@@ -847,22 +851,35 @@ class PlayerControlView(discord.ui.View):
                 await self.voice_state.songs.put({"url": self.voice_state.current.source.url, "title": self.voice_state.current.source.title, "user": self.voice_state.current.source.requester, "duration": self.voice_state.current.source.duration_int})
         except:
             pass
-        self.children[4].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
-        self.children[5].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
+        self.children[3].label = "{} Looping".format("Disable" if self.voice_state._loop else "Enable")
+        self.children[4].label = "{} Loop Queue".format("Disable" if self.voice_state.loopqueue else "Enable")
         await interaction.message.edit(view=self)
+    
+    @discord.ui.button(label="Queue", style=discord.ButtonStyle.primary, custom_id="5", emoji="📜", disabled=False)
+    async def queue(self, button, interaction):
+        # Shows the queue, add page number to view different pages
+        page = 1
+        if len(self.voice_state.songs) == 0 and self.voice_state.current is None:
+            return await interaction.response.send_message('Empty queue.')
+        
+        # Invoking queue while the bot is retrieving another song will cause error, wait for 1 second
+        while self.voice_state.current is None or isinstance(self.voice_state.current, dict):
+            await asyncio.sleep(1)
+        return await interaction.response.send_message(embed=Music.queue_embed(self.voice_state.songs, page, f"Currently Playing", f"[**{self.voice_state.current.source.title}**]({self.voice_state.current.source.url}) ({YTDLSource.parse_duration(self.voice_state.current.source.duration_int - int(time.time() - self.voice_state.current.starttime - self.voice_state.current.pause_duration))} Left)", "url"))
 
 class Music(commands.Cog):
-    # Get the total duration from the queue or playlist
-    def getTotalDuration(self, data):
-        total_duration = 0
-        for song in data:
-            total_duration += song["duration"]
-        return total_duration
-    
+    @staticmethod
     # Return a discord.Embed() object, provides 5 songs from the queue/playlist depending on the page requested
     # Parameter "page" greater than the pages that the queue has will set the page to the last page
     # Invalid parameter "page" will display the first page
-    def queue_embed(self, data, page, header, description, song_id):
+    def queue_embed(data, page, header, description, song_id):
+        # Get the total duration from the queue or playlist
+        def getTotalDuration(data):
+            total_duration = 0
+            for song in data:
+                total_duration += song["duration"]
+            return total_duration
+            
         items_per_page = 5
         pages = math.ceil(len(data) / items_per_page)
         if page < 1:
@@ -893,7 +910,7 @@ class Music(commands.Cog):
         embed = (discord.Embed(
                     title=header,
                     description=description)
-                .add_field(name=f"**{len(data)} tracks** - {YTDLSource.parse_duration(self.getTotalDuration(data))}", value=queue)
+                .add_field(name=f"**{len(data)} tracks** - {YTDLSource.parse_duration(getTotalDuration(data))}", value=queue)
                 .set_footer(text=f"Viewing page {page}/{pages}")
             )
         return embed
@@ -966,6 +983,7 @@ class Music(commands.Cog):
         ctx.voice_state = self.get_voice_state(ctx)
         ctx.debug = ctx.voice_state.debug
         ctx.ctx = {"channel": ctx.channel, "message": ctx.message, "ctx":ctx}
+        ctx.from_play = False
 
     # Return a meaningful message to user when error occurs
     # If debug log is enabled, return the traceback for debugging use. The debug message is encoded in base64 in case leaking the directory info
@@ -973,7 +991,8 @@ class Music(commands.Cog):
         formatted_error = traceback.format_exc()
         if str(error) == "This command can't be used in DM channels.":
             return await ctx.send("This command can't be used in DM channels.")
-        await ctx.send(f"Error: {error}")
+        if not (str(error) == "Application Command raised an exception: AttributeError: 'NoneType' object has no attribute 'is_finished'"):
+            await ctx.send(f"Error: {error}")
         if hasattr(ctx, "voice_state") and ctx.voice_state:
             if ctx.voice_state.debug["debug_log"]:
                 await ctx.send("Debug file", file=discord.File(io.BytesIO(base64.b64encode(formatted_error.encode("utf-8"))), f"{ctx.guild.id}_error.txt"))
@@ -1476,8 +1495,8 @@ class Music(commands.Cog):
         # Displaying filename with _ will cause discord to format the text, replace them with \_ to avoid this problem
         await self.respond(ctx.ctx, 'Enqueued {}'.format(title.replace("_", "\\_")))
         ctx.voice_state.stopped = False
-    
-    @commands.command(name="runningservers", aliases=["rs"])
+
+    @bridge.bridge_command(name="runningservers", aliases=["rs"])
     async def runningservers(self, ctx):
         # Check whether the user id is in the author list
         if ctx.author.id in authors:
@@ -1542,8 +1561,11 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, "There is no songs playing right now.")
     
-    @commands.command(name="musicdebug")
-    async def musicdebug(self, ctx, guildid=None, options=None, *, args=None):
+    @bridge.bridge_command(name="musicdebug")
+    async def musicdebug(self, ctx, arg0=None, arg1=None, *, arg2=None):
+        guildid = arg0
+        options = arg1
+        args = arg2
         # Debug menu
         if ctx.author.id in authors:
             guild = None
@@ -1830,7 +1852,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.4").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.5").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))
