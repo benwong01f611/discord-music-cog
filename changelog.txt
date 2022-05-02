@@ -2,7 +2,7 @@ v1.8.5
 - "Pause" and "Resume" button in the player is now merged into one button
 - Added "Queue" button to the player to view the current queue (Currently can only view the first page)
 - Function "queue_embed" under class "Music" is now static method and function "getTotalDuration" is embedded into function "queue_embed"
-
+- User that is not in the same voice channel cannot interact with buttons now (Queue is an exception)
 v1.8.4
 - Command "play" now supports playing audio file with URL
     - That means you can even play full Shrek movie if you have a direct link to the movie file
