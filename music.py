@@ -428,7 +428,11 @@ class VoiceState:
             else:
                 return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(url), data={'duration': duration, 'title': title, 'url': "local@" + url, 'requester': requester}), True)
         elif "youtube" in domain or "youtu.be" in domain:
-            return Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
+            try:
+                result = Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
+            except:
+                return "error"
+            return result
         else:
             # Direct Link
             try:
@@ -578,6 +582,7 @@ class VoiceState:
                         await self.message.delete()
                     except:
                         pass
+            
 
     def play_next_song(self, error=None):
         end_time = time.time()
@@ -681,6 +686,7 @@ class SearchMenu(discord.ui.Select):
 
     async def callback(self, interaction):
         if int(self.values[0]) == 11:
+            self.completed = True
             return await interaction.message.edit(embed=discord.Embed(title="Cancelled", description=None, color=discord.Color.green()), view=None)
         # Edit the message to reduce its size
         await interaction.message.edit(embed=discord.Embed(title="Selected:", description=self.data[int(self.values[0])]["title"], color=discord.Color.green()), view=None)
@@ -1609,25 +1615,31 @@ class Music(commands.Cog):
                 embed.add_field(name="Duration of no user in voice channel", value=f"{voice_state.timer} s")
                 return await self.respond(ctx, embed=embed)
             elif options == "queue":
+                def getTotalDuration(data):
+                    total_duration = 0
+                    for song in data:
+                        total_duration += song["duration"]
+                    return total_duration
                 items_per_page = 5
                 pages = math.ceil(len(voice_state.songs) / items_per_page)
-                if args is None:
-                    page = 1
-                else:
+                if args is not None:
                     try:
-                        page = int(args)
+                        page = int(page)
                     except:
                         page = 1
-                if page < 1:
+                else:
                     page = 1
                 page = min(pages, page)
                 start = (page - 1) * items_per_page
                 end = start + items_per_page
                 embed = discord.Embed(title=f"Song queue: {len(voice_state.songs)} songs, Page {page}/{pages}")
-                for i, song in enumerate(voice_state.songs[start:end], start=start):
-                    song_compact = song.copy()
-                    song_compact["user"] = {"username": song_compact["user"].name + "#" + song_compact["user"].discriminator, "id": song_compact["user"].id}
-                    embed.add_field(name=i+1, value=song_compact, inline=False)
+                if len(voice_state.songs):
+                    for i, song in enumerate(voice_state.songs[start:end], start=start):
+                        song_compact = song.copy()
+                        song_compact["user"] = {"username": song_compact["user"].name + "#" + song_compact["user"].discriminator, "id": song_compact["user"].id}
+                        embed.add_field(name=i+1, value=song_compact, inline=False)
+                else:
+                    embed.add_field(name="No song", value="No song...")
                 return await self.respond(ctx, embed=embed)
             elif options == "song":
                 embed = discord.Embed(title="Current Song")
@@ -1852,7 +1864,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.5").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.6").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

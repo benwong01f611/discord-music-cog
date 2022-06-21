@@ -1,3 +1,10 @@
+v1.8.6
+=== NOTE ===
+I noticed that there are some issues with discord.Option on pycord 2.0.0rc1, stay on 2.0.0b7 for now
+- Fixed command "musicdebug" cannot view queue
+- Fixed command "search" will show timeout if user clicked "Cancel"
+- Fixed song became unavailable after adding to playlist will break the player, it will just skip the song now
+
 v1.8.5
 - "Pause" and "Resume" button in the player is now merged into one button
 - Added "Queue" button to the player to view the current queue (Currently can only view the first page)
