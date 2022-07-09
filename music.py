@@ -646,8 +646,8 @@ class SearchMenu(discord.ui.Select):
         self.cog = cog
         self.ctx = ctx
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-        options = [discord.SelectOption(label=data["title"], description=f"Duration: {data['duration']}", value=data["index"], emoji=reaction_list[data["index"]]) for data in options_raw]
-        options.append(discord.SelectOption(label="Cancel", description="Cancel the search", value=11, emoji="❌"))
+        options = [discord.SelectOption(label=data["title"], description=f"Duration: {data['duration']}", value=str(data["index"]), emoji=reaction_list[data["index"]]) for data in options_raw]
+        options.append(discord.SelectOption(label="Cancel", description="Cancel the search", value="11", emoji="❌"))
         self.data = options_raw
         self.completed = False
         super().__init__(
@@ -1864,7 +1864,7 @@ class Music(commands.Cog):
 
     @bridge.bridge_command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.6").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.7").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))
