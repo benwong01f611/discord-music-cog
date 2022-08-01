@@ -406,7 +406,7 @@ class VoiceState:
             # Without sleep, it will cause lag (at least it lagged on my laptop)
             await asyncio.sleep(1)
             # If the volume is updated, update it
-            if not isinstance(self.current, dict) and self.current and self.current.source.volume != self._volume:
+            if not isinstance(self.current, dict) and not isinstance(self.current, str) and self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
     async def create_song_source(self, ctx, url, title=None, requester=None, seek=None):
@@ -1952,7 +1952,7 @@ class Music(commands.Cog):
 
     @commands.command(name="musicversion", description="Shows the current music cog version")
     async def musicversion(self, ctx):
-        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.7").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
+        await self.respond(ctx.ctx, embed=discord.Embed(title="Discord Music Cog v1.8.8").add_field(name="Author", value="<@127312771888054272>").add_field(name="Cog Github Link", value="[Link](https://github.com/benwong01f611/discord-music-cog)"))
 
 def setup(bot):
     bot.add_cog(Music(bot))

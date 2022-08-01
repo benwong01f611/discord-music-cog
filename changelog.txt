@@ -1,3 +1,6 @@
+v1.8.8
+- Fixed update_volume task will throw exception when the current song has error while creating source
+
 v1.8.7
 - Fixed command "search" return error because of passing int to "value" property of discord.SelectOption
 - Added non-bridge version
