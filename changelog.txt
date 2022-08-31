@@ -1,3 +1,10 @@
+v1.9.0
+- Merged English and Traditional Chinese version, it will now read the localization file
+	- The "language" variable controls the language, switch the language with value "en" or "tc"
+- Embed can be toggled in the python file too
+- Localization update
+- Language file should be placed at the same directory as main.py
+
 v1.8.8
 - Fixed update_volume task will throw exception when the current song has error while creating source
 
