@@ -1,3 +1,6 @@
+v1.9.1
+- Fixed embed problem
+
 v1.9.0
 - Merged English and Traditional Chinese version, it will now read the localization file
 	- The "language" variable controls the language, switch the language with value "en" or "tc"

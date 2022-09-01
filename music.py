@@ -660,7 +660,8 @@ class SearchMenu(discord.ui.Select):
         )
     async def respond(self, message_reply, message: str=None, color=None, embed=None, reply: bool=True, view=None):
         if useEmbed:
-            embed = discord.Embed(title=message, color=color)
+            if embed is None:
+                embed = discord.Embed(title=message, color=color)
             message = None
         if reply:
                 return await message_reply.reply(message, embed=embed, mention_author=False, view=view)
@@ -933,7 +934,8 @@ class Music(commands.Cog):
     # reply=True will cause the bot to reply to the user (discord function)
     async def respond(self, ctx, message: str=None, color=None, embed=None, reply: bool=True, view=None):
         if useEmbed:
-            embed = discord.Embed(title=message, color=color)
+            if embed is None:
+                embed = discord.Embed(title=message, color=color)
             message = None
         if isinstance(ctx, dict): 
             if reply:
