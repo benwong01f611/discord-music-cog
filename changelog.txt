@@ -1,3 +1,6 @@
+v1.9.2
+- Fixed embed problem again
+
 v1.9.1
 - Fixed embed problem
 
