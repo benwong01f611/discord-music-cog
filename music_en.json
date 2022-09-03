@@ -122,7 +122,7 @@
         "queue_row": "`{0}.` [**{1}**]({2}{3}) ({4})\n",
         "empty": "No songs in queue...",
         "embed_body": "**{0} tracks** - {1}",
-        "page": "Viewing page {page}/{pages}"
+        "page": "Viewing page {0}/{1}"
     },
     "descriptions": {
         "join": "Joins the current voice channel",
@@ -147,7 +147,7 @@
         "playlist": "Manage playlist",
         "musicversion": "Shows the current music cog version"
     },
-    "cog_name": "Discord Music Cog v1.9.2",
+    "cog_name": "Discord Music Cog v1.9.3",
     "author": "Author",
     "cog_github": "Cog Github Link",
     "cog_github_link": "[Link](https://github.com/benwong01f611/discord-music-cog)",

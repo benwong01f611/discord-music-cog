@@ -649,7 +649,7 @@ class SearchMenu(discord.ui.Select):
         self.ctx = ctx
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         options = [discord.SelectOption(label=data["title"], description=loc["search_menu"]["video_length"].format(data['duration']), value=str(data["index"]), emoji=reaction_list[data["index"]]) for data in options_raw]
-        options.append(discord.SelectOption(label=loc["search_menu"]["cancel"], description=loc["search_menu"]["cancel_desc"], value=11, emoji="❌"))
+        options.append(discord.SelectOption(label=loc["search_menu"]["cancel"], description=loc["search_menu"]["cancel_desc"], value="11", emoji="❌"))
         self.data = options_raw
         self.completed = False
         super().__init__(
@@ -1519,7 +1519,7 @@ class Music(commands.Cog):
                 if voice_state.voice:
                     server_count += 1
                     desc += f'{self.bot.get_guild(guild_id).name} / {guild_id}\n'
-            return await self.respond(ctx.ctx, loc["messages"]["runningservers"].format(str(server_count)), description=desc[:-1])
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=loc["messages"]["runningservers"].format(str(server_count)), description=desc[:-1]))
 
     @bridge.bridge_command(name="seek", description=loc["descriptions"]["seek"])
     async def seek(self, ctx, seconds=None):

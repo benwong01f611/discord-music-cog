@@ -19,8 +19,8 @@ import json
 import base64
 import io
 
-language = "en" # en/tc
-useEmbed = False
+language = "tc" # en/tc
+useEmbed = True
 loc = json.load(open(f"music_{language}.json","r"))
 # Silence useless bug reports messages
 youtube_dl.utils.bug_reports_message = lambda: ''
@@ -649,7 +649,7 @@ class SearchMenu(discord.ui.Select):
         self.ctx = ctx
         reaction_list = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
         options = [discord.SelectOption(label=data["title"], description=loc["search_menu"]["video_length"].format(data['duration']), value=str(data["index"]), emoji=reaction_list[data["index"]]) for data in options_raw]
-        options.append(discord.SelectOption(label=loc["search_menu"]["cancel"], description=loc["search_menu"]["cancel_desc"], value=11, emoji="❌"))
+        options.append(discord.SelectOption(label=loc["search_menu"]["cancel"], description=loc["search_menu"]["cancel_desc"], value="11", emoji="❌"))
         self.data = options_raw
         self.completed = False
         super().__init__(
@@ -939,7 +939,7 @@ class Music(commands.Cog):
             message = None
         if isinstance(ctx, dict): 
             if reply:
-                if isinstance(ctx["ctx"], discord.ext.bridge.context.BridgeExtContext): # Prefix
+                if isinstance(ctx["ctx"], discord.ext.commands.Context): # Prefix
                     return await ctx["ctx"].reply(message, embed=embed, mention_author=False, view=view)
                 else:
                     return await ctx["ctx"].respond(message, embed=embed, view=view)
@@ -949,12 +949,12 @@ class Music(commands.Cog):
                     
         else: # Debugging
             if reply:
-                if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
+                if isinstance(ctx, discord.ext.commands.Context): # Prefix
                     return await ctx.reply(message, embed=embed, mention_author=False, view=view)
                 else:
                     return await ctx.respond(message, embed=embed, view=view)
             else:
-                if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext): # Prefix
+                if isinstance(ctx, discord.ext.commands.Context): # Prefix
                     return await ctx.send(message, embed=embed, view=view)
                 else:
                     return await ctx.respond(message, embed=embed, view=view)
@@ -1016,7 +1016,7 @@ class Music(commands.Cog):
             if ctx.voice_state.debug["debug_log"]:
                 await ctx.send("Debug file", file=discord.File(io.BytesIO(base64.b64encode(formatted_error.encode("utf-8"))), f"{ctx.guild.id}_error.txt"))
 
-    @commands.slash_command(name='join', invoke_without_subcommand=True, description="Joins the current voice channel")
+    @commands.slash_command(name='join', invoke_without_subcommand=True, description=loc["descriptions"]["join"])
     async def joinslash(self, ctx):
         await self._join(context=ctx)
 
@@ -1063,7 +1063,7 @@ class Music(commands.Cog):
             shutil.rmtree(f"./tempMusic/{ctx.guild.id}")
         await ctx.me.edit(deafen=True)
 
-    @commands.slash_command(name='summon', description="Summon the bot to current voice channel (Requires Move Member permission)")
+    @commands.slash_command(name='summon', description=loc["descriptions"]["summon"])
     async def summonslash(self, ctx, channel=None):
         await self._summon(context=ctx, channel=channel)
     
@@ -1114,7 +1114,7 @@ class Music(commands.Cog):
             except:
                 await self.respond(ctx.ctx, loc["messages"]["require_mute"], color=0xff0000)
 
-    @commands.slash_command(name='leave', description="Leave the voice channel")
+    @commands.slash_command(name='leave', description=loc["descriptions"]["leave"])
     async def leaveslash(self, ctx):
         await self._leave(context=ctx)
     
@@ -1130,7 +1130,7 @@ class Music(commands.Cog):
             if not ctx.voice_state.voice:
                 return await self.respond(ctx.ctx,loc["messages"]["not_connected"], color=0xff0000)
 
-        if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+        if isinstance(ctx, discord.ext.commands.Context):
             await ctx.message.add_reaction('⏹')
         else:
             await self.respond(ctx.ctx, loc["messages"]["left"])
@@ -1138,7 +1138,7 @@ class Music(commands.Cog):
         await ctx.voice_state.stop(leave=True)
         del self.voice_states[ctx.guild.id]
 
-    @commands.slash_command(name='volume', description="Show/Adjust the volume of the bot")
+    @commands.slash_command(name='volume', description=loc["descriptions"]["volume"])
     async def volumeslash(self, ctx, volume=None):
         await self._volume(context=ctx, volume=volume)
     
@@ -1173,7 +1173,7 @@ class Music(commands.Cog):
             # Return the current volume
             return await self.respond(ctx.ctx, loc["messages"]["current_volume"].format(int(ctx.voice_state.volume*100)), color=0x1eff00)
 
-    @commands.slash_command(name='now', description="Display current song")
+    @commands.slash_command(name='now', description=loc["descriptions"]["now"])
     async def nowslash(self, ctx):
         await self._now(context=ctx)
 
@@ -1184,7 +1184,7 @@ class Music(commands.Cog):
             return await self.respond(ctx.ctx, loc["messages"]["no_playing"], color=0xff0000)
         await self.respond(ctx.ctx, embed=ctx.voice_state.current.create_embed("now"))
 
-    @commands.slash_command(name='pause', description="Pause the song")
+    @commands.slash_command(name='pause', description=loc["descriptions"]["pause"])
     async def pauseslash(self, ctx):
         await self._pause(context=ctx)
     
@@ -1198,7 +1198,7 @@ class Music(commands.Cog):
         # If the bot is playing, pause it
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
-            if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+            if isinstance(ctx, discord.ext.commands.Context):
                 await ctx.message.add_reaction('⏸')
             else:
                 await self.respond(ctx.ctx, loc["messages"]["paused"], color=0x1eff00)
@@ -1208,7 +1208,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, loc["messages"]["no_playing"], color=0xff0000)
 
-    @commands.slash_command(name='resume', description="Resume paused song")
+    @commands.slash_command(name='resume', description=loc["descriptions"]["resume"])
     async def resumeslash(self, ctx):
         self._resume(context=ctx)
     
@@ -1222,7 +1222,7 @@ class Music(commands.Cog):
         # If the bot is paused, resume it
         if ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
             ctx.voice_state.voice.resume()
-            if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+            if isinstance(ctx, discord.ext.commands.Context):
                 await ctx.message.add_reaction('▶')
             else:
                 await self.respond(ctx.ctx, loc["messages"]["resumed"], color=0x1eff00)
@@ -1233,7 +1233,7 @@ class Music(commands.Cog):
         else:
             await self.respond(ctx.ctx, loc["messages"]["no_paused"], color=0xff0000)
 
-    @commands.slash_command(name='stop', description="Remove all songs in queue and stop the bot")
+    @commands.slash_command(name='stop', description=loc["descriptions"]["stop"])
     async def stopslash(self, ctx):
         await self._stop(context=ctx)
     
@@ -1249,12 +1249,12 @@ class Music(commands.Cog):
         if ctx.voice_state.is_playing:
             await ctx.voice_state.stop()
             ctx.voice_state.stopped = True
-            if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+            if isinstance(ctx, discord.ext.commands.Context):
                 await ctx.message.add_reaction('⏹')
             else:
                 await self.respond(ctx.ctx, loc["messages"]["stop"], color=0x1eff00)
 
-    @commands.slash_command(name='skip', description="Skip current song")
+    @commands.slash_command(name='skip', description=loc["descriptions"]["skip"])
     async def skipslash(self, ctx):
         await self._skip(context=ctx)
     
@@ -1268,13 +1268,13 @@ class Music(commands.Cog):
         if not ctx.voice_state.is_playing:
             return await self.respond(ctx.ctx, loc["messages"]["no_playing"], color=0xff0000)
 
-        if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+        if isinstance(ctx, discord.ext.commands.Context):
             await ctx.message.add_reaction('⏭')
         else:
             await self.respond(ctx.ctx, loc["messages"]["skipped"], color=0x1eff00)
         ctx.voice_state.skip()
 
-    @commands.slash_command(name='queue', description="Show song queue")
+    @commands.slash_command(name='queue', description=loc["descriptions"]["queue"])
     async def queueslash(self, ctx, page=None):
         await self._queue(context=ctx, page=page)
     
@@ -1297,7 +1297,7 @@ class Music(commands.Cog):
             await asyncio.sleep(1)
         return await self.respond(ctx.ctx, embed=self.queue_embed(ctx.voice_state.songs, page, loc["queue_embed"]["title"], loc["queue_embed"]["body"].format(ctx.voice_state.current.source.title, ctx.voice_state.current.source.url, YTDLSource.parse_duration(ctx.voice_state.current.source.duration_int - int(time.time() - ctx.voice_state.current.starttime - ctx.voice_state.current.pause_duration))), "url"))
 
-    @commands.slash_command(name='shuffle', description="Shuffle the song queue")
+    @commands.slash_command(name='shuffle', description=loc["descriptions"]["shuffle"])
     async def shuffleslash(self, ctx):
         await self._shuffle(context=ctx)
 
@@ -1311,12 +1311,12 @@ class Music(commands.Cog):
             return await self.respond(ctx.ctx, loc["messages"]["empty_queue"], color=0xff0000)
 
         ctx.voice_state.songs.shuffle()
-        if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+        if isinstance(ctx, discord.ext.commands.Context):
             await ctx.message.add_reaction('🔀')
         else:
             await self.respond(ctx.ctx, loc["messages"]["shuffled"], color=0x1eff00)
 
-    @commands.slash_command(name='remove', description="Remove a song from queue")
+    @commands.slash_command(name='remove', description=loc["descriptions"]["remove"])
     async def removeslash(self, ctx, index=None):
         await self._remove(context=ctx, index=index)
 
@@ -1340,12 +1340,12 @@ class Music(commands.Cog):
         name = ctx.voice_state.songs_queue[index - 1]
         ctx.voice_state.songs.remove(index - 1)
 
-        if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
+        if isinstance(ctx, discord.ext.commands.Context):
             await ctx.message.add_reaction('✅')
         else:
             await self.respond(ctx.ctx, loc["messages"]["removed"].format(name), color=0x1eff00)
 
-    @commands.slash_command(name='loop', description="Toggle looping for current song")
+    @commands.slash_command(name='loop', description=loc["descriptions"]["loop"])
     async def loopslash(self, ctx):
         await self._loop(context=ctx)
 
@@ -1363,7 +1363,7 @@ class Music(commands.Cog):
         ctx.voice_state.loop = not ctx.voice_state.loop
         await self.respond(ctx.ctx, (loc["messages"]["enable_loop"] if ctx.voice_state.loop else loc["messages"]["disable_loop"]), color=0x1eff00)
 
-    @commands.slash_command(name='play', description="Plays a song or a playlist")
+    @commands.slash_command(name='play', description=loc["descriptions"]["play"])
     async def playslash(self, ctx, search=None):
         await self._play(context=ctx, search=search)
 
@@ -1460,7 +1460,7 @@ class Music(commands.Cog):
         except YTDLError as e:
             await self.respond(ctx.ctx, loc["messages"]["error"].format(str(e)), color=0x1eff00)
                    
-    @commands.slash_command(name='search', description="Search a song from Youtube")
+    @commands.slash_command(name='search', description=loc["descriptions"]["search"])
     async def searchslash(self, ctx, keyword=None):
         await self.search(context=ctx, keyword=keyword)
     
@@ -1502,7 +1502,7 @@ class Music(commands.Cog):
             message = await message.original_message()
         view.message = message
 
-    @commands.slash_command(name='musicreload', description="Reload the music bot")
+    @commands.slash_command(name='musicreload', description=loc["descriptions"]["musicreload"])
     async def musicreloadslash(self, ctx):
         await self.musicreload(context=ctx)
 
@@ -1524,7 +1524,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
         await self.respond(ctx.ctx, loc["messages"]["reloaded"], color=discord.Color.green())
     
-    @commands.slash_command(name="loopqueue", description="Toggle looping for current queue")
+    @commands.slash_command(name="loopqueue", description=loc["descriptions"]["loopqueue"])
     async def loopqueueslash(self, ctx):
         await self.loopqueue(context=ctx)
     
@@ -1597,9 +1597,9 @@ class Music(commands.Cog):
                 if voice_state.voice:
                     server_count += 1
                     desc += f'{self.bot.get_guild(guild_id).name} / {guild_id}\n'
-            return await self.respond(ctx.ctx, loc["messages"]["runningservers"].format(str(server_count)), description=desc[:-1])
+            return await self.respond(ctx.ctx, embed=discord.Embed(title=loc["messages"]["runningservers"].format(str(server_count)), description=desc[:-1]))
 
-    @commands.slash_command(name="seek", description="Seek to a specific point")
+    @commands.slash_command(name="seek", description=loc["descriptions"]["seek"])
     async def seekslash(self, ctx, seconds=None):
         await self.seek(context=ctx, seconds=seconds)
     
@@ -1809,7 +1809,7 @@ class Music(commands.Cog):
                 data = json.dumps(data, indent=4, ensure_ascii=False)
                 await ctx.send(file=discord.File(io.BytesIO(data.encode("utf-8")), f"playlist_{ctx.guild.id}.json"))"""
 
-    @commands.slash_command(name="playlist", description="Manage playlist")
+    @commands.slash_command(name="playlist", description=loc["descriptions"]["playlist"])
     async def playlist_funcslash(self, ctx, args=None):
         await self.playlist_func(context=ctx, args=args)
     
@@ -1959,7 +1959,7 @@ class Music(commands.Cog):
             os.mkdir("./music")
         open(file, "w", encoding="utf-8").write(json.dumps(data))
 
-    @commands.slash_command(name="musicversion", description="Shows the current music cog version")
+    @commands.slash_command(name="musicversion", description=loc["descriptions"]["musicversion"])
     async def musicversionslash(self, ctx):
         await self.musicversion(context=ctx)
 

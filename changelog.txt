@@ -1,3 +1,8 @@
+v1.9.3
+- Fixed non-bridge version cannot play music
+- Fixed command "runningservers" cannot be used
+- Fixed command "search" cannot be used
+
 v1.9.2
 - Fixed embed problem again
 
