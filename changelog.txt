@@ -1,3 +1,7 @@
+v1.10.0
+- Now support most video/music sites (Uses YoutubeDL, so you can check for supported sites in https://github.com/ytdl-org/youtube-dl/blob/master/docs/supportedsites.md)
+- Fixed loc for en
+
 v1.9.3
 - Fixed non-bridge version cannot play music
 - Fixed command "runningservers" cannot be used

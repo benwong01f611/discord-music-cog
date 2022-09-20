@@ -14,6 +14,7 @@ This is a fork from a replit template. Some bugs were found during usage, theref
 - Play uploaded files
 - Seek to specific position in seconds
 - Playlist
+- Play videos from many sites (YoutubeDL)
 
 ## Differences
 - Fixed looping causes exception

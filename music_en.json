@@ -69,7 +69,7 @@
         "left": "Bot left the voice channel.",
         "volume_invalid": "Unable to parse the volume.",
         "volume_invalid_range": "Volume must be between 0 and 100.",
-        "updated_volume": "Volume of the player set to {volume}%",
+        "updated_volume": "Volume of the player set to {0}%",
         "current_volume": "Current volume: {0}%",
         "no_playing": "There is no songs playing right now.",
         "no_paused": "There is no songs paused right now.",
@@ -147,7 +147,7 @@
         "playlist": "Manage playlist",
         "musicversion": "Shows the current music cog version"
     },
-    "cog_name": "Discord Music Cog v1.9.3",
+    "cog_name": "Discord Music Cog v1.10.0",
     "author": "Author",
     "cog_github": "Cog Github Link",
     "cog_github_link": "[Link](https://github.com/benwong01f611/discord-music-cog)",
