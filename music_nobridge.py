@@ -574,7 +574,6 @@ class VoiceState:
                 await asyncio.sleep(0.25)
                 self.start_time = time.time()
                 self.current.starttime = time.time()
-                print(self.current.source.realurl)
                 if not self.forbidden:
                     self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"), view=PlayerControlView(self.bot, self))
                 self.forbidden = False

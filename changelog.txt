@@ -1,3 +1,6 @@
+v1.10.1
+- Removed debug message
+
 v1.10.0
 - Now support most video/music sites (Uses YoutubeDL, so you can check for supported sites in https://github.com/ytdl-org/youtube-dl/blob/master/docs/supportedsites.md)
 - Fixed loc for en
