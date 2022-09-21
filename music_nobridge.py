@@ -552,7 +552,7 @@ class VoiceState:
                                 if "youtube" in domain or "youtu.be" in domain:
                                     self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
                                 else:
-                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"], duration=self.current["duration"], realurl=self.current.source.realurl)
+                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"], duration=self.current["duration"], realurl=self.current["realurl"])
                                 if self.current != "error":
                                     self.skipped = False
                                     self.stopped = False

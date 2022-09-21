@@ -1,3 +1,6 @@
+v1.10.2
+- Fixed skipping while looping song will cause error when the next song is from other website
+
 v1.10.1
 - Removed debug message
 
