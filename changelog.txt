@@ -1,3 +1,6 @@
+v1.10.3
+- Fixed command "remove" causing error
+
 v1.10.2
 - Fixed skipping while looping song will cause error when the next song is from other website
 
