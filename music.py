@@ -35,6 +35,42 @@ error_messages = {
 # Insert authors' id in here, user in this set are allowed to use command "runningservers"
 authors = (,)
 
+# Commandline options for youtube-dl and ffmpeg
+YTDL_OPTIONS_PLAYLIST = {
+    'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',
+    'extract_flat': 'in_playlist',
+}
+YTDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',
+}
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
+}
+
 class VoiceError(Exception):
     pass
 
@@ -49,7 +85,6 @@ class FFMPEGSource(discord.PCMVolumeTransformer):
         self.data = data
         self.title = data.get('title')
         self.url = data.get('url')
-        self.realurl = data.get('realurl')
         try:
             self.duration = self.parse_duration(int(data.get('duration')))
         except:
@@ -62,6 +97,30 @@ class FFMPEGSource(discord.PCMVolumeTransformer):
 
     def __str__(self):
         return f"**{self.title}**"
+
+    ytdl = youtube_dl.YoutubeDL(YTDL_OPTIONS)
+
+    @classmethod
+    async def create_source(self, ctx, url: str, *, loop: asyncio.BaseEventLoop = None, requester=None, seek=None):
+        loop = loop or asyncio.get_event_loop()
+
+        # Extract data with youtube-dl
+        partial = functools.partial(self.ytdl.extract_info, url, download=False)
+        data = await loop.run_in_executor(None, partial)
+        info = {
+            "url": data["url"],
+            "webpage_url": data["webpage_url"],
+            "title": data["title"],
+            "duration": data["duration"],
+            "requester": requester
+        }
+        # If seeking, ask ffmpeg to start from a specific position, else simply return the object
+        if seek is not None:
+            seek_option = FFMPEG_OPTIONS.copy()
+            seek_option['before_options'] += " -ss " + self.parse_duration_raw(seek)
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **seek_option), data=info)
+        else:
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **FFMPEG_OPTIONS), data=info)
 
     # Parse the duration to xx days xx hours xx minutes xx seconds
     @staticmethod
@@ -100,42 +159,6 @@ class FFMPEGSource(discord.PCMVolumeTransformer):
         return ':'.join(durations)
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    # Commandline options for youtube-dl and ffmpeg
-    YTDL_OPTIONS_PLAYLIST = {
-        'format': 'bestaudio/best',
-        'extractaudio': True,
-        'audioformat': 'mp3',
-        'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-        'restrictfilenames': True,
-        'nocheckcertificate': True,
-        'ignoreerrors': False,
-        'logtostderr': False,
-        'quiet': True,
-        'no_warnings': True,
-        'default_search': 'auto',
-        'source_address': '0.0.0.0',
-        'extract_flat': 'in_playlist',
-    }
-    YTDL_OPTIONS = {
-        'format': 'bestaudio/best',
-        'extractaudio': True,
-        'audioformat': 'mp3',
-        'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-        'restrictfilenames': True,
-        'noplaylist': True,
-        'nocheckcertificate': True,
-        'ignoreerrors': False,
-        'logtostderr': False,
-        'quiet': True,
-        'no_warnings': True,
-        'default_search': 'auto',
-        'source_address': '0.0.0.0',
-    }
-    FFMPEG_OPTIONS = {
-        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-        'options': '-vn',
-    }
-
     ytdl = youtube_dl.YoutubeDL(YTDL_OPTIONS)
     ytdl_playlist = youtube_dl.YoutubeDL(YTDL_OPTIONS_PLAYLIST)
 
@@ -218,11 +241,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
         info["requester"] = requester
         # If seeking, ask ffmpeg to start from a specific position, else simply return the object
         if seek is not None:
-            seek_option = self.FFMPEG_OPTIONS.copy()
+            seek_option = FFMPEG_OPTIONS.copy()
             seek_option['before_options'] += " -ss " + self.parse_duration_raw(seek)
             return self(ctx, discord.FFmpegPCMAudio(info['url'], **seek_option), data=info)
         else:
-            return self(ctx, discord.FFmpegPCMAudio(info['url'], **self.FFMPEG_OPTIONS), data=info)
+            return self(ctx, discord.FFmpegPCMAudio(info['url'], **FFMPEG_OPTIONS), data=info)
 
     # Parse the duration to xx days xx hours xx minutes xx seconds
     @staticmethod
@@ -391,7 +414,7 @@ class VoiceState:
         self.voice.stop()
         # Recreate ffmpeg object
         if isLocal or isDirectLink:
-            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, seek=seconds, duration=self.current.source.duration_int, realurl=self.current.source.realurl)
+            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, seek=seconds, duration=self.current.source.duration_int)
         else:
             self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester, seek=seconds)
         # Update volume
@@ -413,7 +436,7 @@ class VoiceState:
             if not isinstance(self.current, dict) and not isinstance(self.current, str) and self.current and self.current.source.volume != self._volume:
                 self.current.source.volume = self._volume
     
-    async def create_song_source(self, ctx, url, title=None, requester=None, seek=None, duration=None, realurl=None):
+    async def create_song_source(self, ctx, url, title=None, requester=None, seek=None, duration=None):
         try:
             domain = url.split("/")[2]
         except:
@@ -434,19 +457,18 @@ class VoiceState:
         elif "youtube" in domain or "youtu.be" in domain:
             try:
                 result = Song(await YTDLSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek))
-            except:
+            except Exception as e:
+                await ctx.channel.send(str(e))
                 return "error"
             return result
         else:
-            # Direct Link
-            # Try to get the duration of the uploaded file
-            # Return the song object with ffmpeg
-            # realrealurl means the which url should ffmpeg use
-            realrealurl = realurl if realurl is not None else url
-            if seek is not None:
-                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(realrealurl, before_options="-ss " + YTDLSource.parse_duration_raw(seek)), data={'duration': duration, 'title': title, 'url': url, 'requester': requester, 'realurl': realurl}, seek=seek), True, True)
-            else:
-                return Song(FFMPEGSource(ctx, discord.FFmpegPCMAudio(realrealurl), data={'duration': duration, 'title': title, 'url': url, 'requester': requester, "realurl": realurl}), True, True)
+            # Direct Link or other source
+            try:
+                result = Song(await FFMPEGSource.create_source(ctx, url, loop=self.bot.loop, requester=requester, seek=seek), True, True)
+            except Exception as e:
+                await ctx.channel.send("Error: " + str(e))
+                return "error"
+            return result
 
     async def check_user_listening(self):
         while True:
@@ -502,7 +524,7 @@ class VoiceState:
                 if "youtube" in domain or "youtu.be" in domain:
                     self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
                 else:
-                    self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, duration=self.current.source.duration_int, realurl=self.current.source.realurl)
+                    self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, duration=self.current.source.duration_int)
             else:
                 if not self.loop:
                     # Try to get the next song within 2 minutes.
@@ -515,7 +537,7 @@ class VoiceState:
                             if self.skipped:
                                 self.current = None
                             # Get the next song
-                            self.current = await self.songs.get()
+                            self.next_song = await self.songs.get()
                             # If the url contains local@, it is a local file
                             #if "local@" in self.current["url"]:
                             try:
@@ -523,10 +545,10 @@ class VoiceState:
                             except:
                                 domain = ""
                             if "youtube" in domain or "youtu.be" in domain:
-                                self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
+                                self.current = await self.create_song_source(self._ctx, self.next_song["url"], requester=self.next_song["user"])
                             else:
                                 # Direct link
-                                self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"], duration=self.current["duration"], realurl=self.current["realurl"])
+                                self.current = await self.create_song_source(self._ctx, self.next_song["url"], title=self.next_song["title"], requester=self.next_song["user"], duration=self.next_song["duration"])
                             if self.current != "error":
                                 # If loop queue, put the current song back to the end of the queue
                                 if self.loopqueue:
@@ -550,7 +572,7 @@ class VoiceState:
                                 if "youtube" in domain or "youtu.be" in domain:
                                     self.current = await self.create_song_source(self._ctx, self.current["url"], requester=self.current["user"])
                                 else:
-                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"], duration=self.current["duration"], realurl=self.current["realurl"])
+                                    self.current = await self.create_song_source(self._ctx, self.current["url"], title=self.current["title"], requester=self.current["user"], duration=self.current["duration"])
                                 if self.current != "error":
                                     self.skipped = False
                                     self.stopped = False
@@ -566,7 +588,7 @@ class VoiceState:
                         if "youtube" in domain or "youtu.be" in domain:
                             self.current = await self.create_song_source(self._ctx, self.current.source.url, requester=self.current.source.requester)
                         else:
-                            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, duration=self.current.source.duration_int, realurl=self.current.source.realurl)
+                            self.current = await self.create_song_source(self._ctx, self.current.source.url, title=self.current.source.title, requester=self.current.source.requester, duration=self.current.source.duration_int)
             if self.current != "error":
                 self.current.source.volume = self._volume
                 await asyncio.sleep(0.25)
@@ -578,7 +600,7 @@ class VoiceState:
                 self.voice.play(self.current.source, after=self.play_next_song)
                 # Create task for updating volume
                 self.volume_updater = self.bot.loop.create_task(self.update_volume())
-                await self.next.wait()
+                await self.next.wait()  
                 # Delete the message of the song playing
                 if not self.forbidden:
                     try:
@@ -1285,7 +1307,7 @@ class Music(commands.Cog):
             return
         if len(ctx.voice_state.songs) == 0:
             return await self.respond(ctx.ctx, loc["messages"]["empty_queue"], color=0xff0000)
-        name = ctx.voice_state.songs_queue[index - 1]
+        name = ctx.voice_state.songs[index - 1]
         ctx.voice_state.songs.remove(index - 1)
 
         if isinstance(ctx, discord.ext.bridge.context.BridgeExtContext):
@@ -1379,9 +1401,9 @@ class Music(commands.Cog):
                                 return await self.respond(ctx.ctx, loc["not_found"].format(search), color=0xff0000)
                         title = data["title"]
                         if "duration" in data:
-                            await ctx.voice_state.songs.put({"url": search, "title": title, "user": ctx.author, "duration": int(float(data["duration"])), "realurl": data["url"]})
+                            await ctx.voice_state.songs.put({"url": search, "title": title, "user": ctx.author, "duration": int(float(data["duration"]))})
                         else:
-                            await ctx.voice_state.songs.put({"url": search, "title": title, "user": ctx.author, "duration": int(float(subprocess.check_output(f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{search}\"", shell=True).decode("ascii").replace("\r", "").replace("\n", ""))), "realurl": data["url"]})
+                            await ctx.voice_state.songs.put({"url": search, "title": title, "user": ctx.author, "duration": int(float(subprocess.check_output(f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{search}\"", shell=True).decode("ascii").replace("\r", "").replace("\n", "")))})
                     except:
                         return await self.respond(ctx.ctx, loc["messages"]["cannot_add_invalid_file"], color=0xff0000)
                     await self.respond(ctx.ctx, loc["messages"]["added_song"].format(title.replace("_", "\\_")), color=0x1eff00)
