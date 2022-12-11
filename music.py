@@ -21,7 +21,7 @@ import io
 
 language = "en" # en/tc
 useEmbed = False
-loc = json.load(open(f"music_{language}.json","r"))
+loc = json.load(open(f"music_{language}.json","r",encoding="utf-8"))
 # Silence useless bug reports messages
 youtube_dl.utils.bug_reports_message = lambda: ''
 

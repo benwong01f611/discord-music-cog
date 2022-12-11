@@ -1,3 +1,6 @@
+v1.10.4
+- Fixed loading Chinese version would cause error due to not setting to UTF-8
+
 v1.10.3
 - Fixed command "remove" causing error
 
