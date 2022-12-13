@@ -41,6 +41,7 @@
     },
     "btn_label": {
         "pause": "暫停",
+        "resume": "繼續",
         "skip": "跳過",
         "stop": "停止",
         "loop": "重覆",
@@ -147,7 +148,7 @@
         "playlist": "管理播放清單",
         "musicversion": "顯示cog目前的版本"
     },
-    "cog_name": "Discord 音樂 Cog v1.10.4",
+    "cog_name": "Discord 音樂 Cog v1.10.5",
     "author": "作者",
     "cog_github": "Cog Github 連結",
     "cog_github_link": "[連結](https://github.com/benwong01f611/discord-music-cog)",

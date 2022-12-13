@@ -41,6 +41,7 @@
     },
     "btn_label": {
         "pause": "Pause",
+        "resume": "Resume",
         "skip": "Skip",
         "stop": "Stop",
         "loop": "Loop",
@@ -147,7 +148,7 @@
         "playlist": "Manage playlist",
         "musicversion": "Shows the current music cog version"
     },
-    "cog_name": "Discord Music Cog v1.10.4",
+    "cog_name": "Discord Music Cog v1.10.5",
     "author": "Author",
     "cog_github": "Cog Github Link",
     "cog_github_link": "[Link](https://github.com/benwong01f611/discord-music-cog)",

@@ -1,3 +1,6 @@
+v1.10.5
+- Fixed clicking button "Pause" will not change the text due to missing loc
+
 v1.10.4
 - Fixed loading Chinese version would cause error due to not setting to UTF-8
 
