@@ -1,3 +1,6 @@
+v1.10.6
+- Fixed joining channel will cause issue for new Pycord versions
+
 v1.10.5
 - Fixed clicking button "Pause" will not change the text due to missing loc
 
