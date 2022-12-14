@@ -1,3 +1,6 @@
+v1.10.7
+- Fixed cannot join channel issue from 1.10.6
+
 v1.10.6
 - Fixed joining channel will cause issue for new Pycord versions
 

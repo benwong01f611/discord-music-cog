@@ -1040,7 +1040,7 @@ class Music(commands.Cog):
 
     @commands.slash_command(name='join', invoke_without_subcommand=True, description=loc["descriptions"]["join"])
     async def joinslash(self, ctx):
-        await self._join(context=ctx)
+        await self.join(ctx)
 
     @commands.command(name='join', invoke_without_subcommand=True, description=loc["descriptions"]["join"])
     async def _join(self, ctx):
@@ -1405,7 +1405,7 @@ class Music(commands.Cog):
         # Joins the channel if it hasn't
         if not ctx.voice_state.voice:
             ctx.from_play = True
-            await self._join(context=ctx)
+            await self.join(ctx)
         # Errors may occur while joining the channel, if the voice is None, don't continue
         if not ctx.voice_state.voice:
             return
@@ -1590,7 +1590,7 @@ class Music(commands.Cog):
             return await self.respond(ctx.ctx, loc["messages"]["no_file"], color=0xff0000)
         # Joins the channel before playing
         if not ctx.voice_state.voice:
-            state = await self._join(context=ctx)
+            state = await self.join(ctx)
             if state:
                 return
         # Creates temporary folder for storing the audio file
@@ -1934,7 +1934,7 @@ class Music(commands.Cog):
         elif args[1] == "play":
             # Joins the channel if it hasn't
             if not ctx.voice_state.voice:
-                await self._join(context=ctx)
+                await self.join(ctx)
             # Errors may occur while joining the channel, if the voice is None, don't continue
             if not ctx.voice_state.voice:
                 return

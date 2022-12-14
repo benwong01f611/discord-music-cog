@@ -1344,7 +1344,7 @@ class Music(commands.Cog):
         # Joins the channel if it hasn't
         if not ctx.voice_state.voice:
             ctx.from_play = True
-            await ctx.invoke(self._join)
+            await self.join(ctx)
         # Errors may occur while joining the channel, if the voice is None, don't continue
         if not ctx.voice_state.voice:
             return
@@ -1516,7 +1516,7 @@ class Music(commands.Cog):
             return await self.respond(ctx.ctx, loc["messages"]["no_file"], color=0xff0000)
         # Joins the channel before playing
         if not ctx.voice_state.voice:
-            state = await ctx.invoke(self._join)
+            state = await self.join(ctx)
             if state:
                 return
         # Creates temporary folder for storing the audio file
@@ -1843,7 +1843,7 @@ class Music(commands.Cog):
         elif args[1] == "play":
             # Joins the channel if it hasn't
             if not ctx.voice_state.voice:
-                await ctx.invoke(self._join)
+                await self.join(ctx)
             # Errors may occur while joining the channel, if the voice is None, don't continue
             if not ctx.voice_state.voice:
                 return
