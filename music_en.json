@@ -69,7 +69,7 @@
         "voice_not_found": "Unable to find the specific channel.",
         "left": "Bot left the voice channel.",
         "volume_invalid": "Unable to parse the volume.",
-        "volume_invalid_range": "Volume must be between 0 and 100.",
+        "volume_invalid_range": "Volume must be between 0 and 200.",
         "updated_volume": "Volume of the player set to {0}%",
         "current_volume": "Current volume: {0}%",
         "no_playing": "There is no songs playing right now.",
@@ -114,7 +114,8 @@
         "renamed_playlist": "Playlist \"{0}\" renamed to \"{1}\"",
         "play_invalid_index_playlist": "Please provide a valid index!",
         "play_single_playlist": "Added {0} to queue from playlist **{1}**",
-        "play_playlist": "Added {0} songs to queue from playlist **{1}**"
+        "play_playlist": "Added {0} songs to queue from playlist **{1}**",
+        "cannot_join_unk": "Cannot join voice channel due to unknown error"
     },
     "queue_embed": {
         "title": "Currently Playing",
@@ -148,7 +149,7 @@
         "playlist": "Manage playlist",
         "musicversion": "Shows the current music cog version"
     },
-    "cog_name": "Discord Music Cog v1.10.7",
+    "cog_name": "Discord Music Cog v2.0 beta 3",
     "author": "Author",
     "cog_github": "Cog Github Link",
     "cog_github_link": "[Link](https://github.com/benwong01f611/discord-music-cog)",

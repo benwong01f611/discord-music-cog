@@ -1,3 +1,14 @@
+v2.0
+- 2.0, yay!
+- Removed command "musicdebug", "summon", "playlist"
+- Removed lots of duplicated codes
+- Bye, 600 lines of codes!
+- Not using bridge command anymore, will separate prefix and slash command files
+- Updated localization
+- New look of "now" embed
+- Command "loopqueue" will now place the song to the back of the queue after finishing the song instead of placing it when invoking the command or before playing the song
+- Fixed command "loop", "loopqueue", "pause" and "resume" not updating the player buttons
+
 v1.10.7
 - Fixed cannot join channel issue from 1.10.6
 

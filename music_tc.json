@@ -4,7 +4,7 @@
         "unavailable": "影片不可用！",
         "private": "此影片為私人影片！",
         "no_pm": "該指令無法在私訊中使用！",
-        "error_msg": "錯誤： {0}"
+        "error_msg": "錯誤：{0}"
     },
     "unknown": "不明",
     "day": "天",
@@ -73,7 +73,7 @@
         "updated_volume": ":white_check_mark: 已更改音樂音量至`{0}`！",
         "current_volume": "目前音量: `{0}`%",
         "no_playing": ":x: 這個伺服器沒有任何正在播放的音樂！",
-        "no_paused": ":x: 這個伺服器沒有任何已暫時的音樂！",
+        "no_paused": ":x: 這個伺服器沒有任何已暫停的音樂！",
         "paused": ":arrow_forward: 已暫停目前歌曲！",
         "resumed": ":pause_button: 已開始繼續目前歌曲！",
         "stop": ":record_button: 已清除並停止所有音樂！",
@@ -87,7 +87,7 @@
         "cannot_add_invalid_file": "無法新增此歌曲，或許這不是一個音訊檔案？",
         "search_title": "`{0}`的搜尋結果：",
         "search_desc": "請點擊選單來選擇搜索到的結果！",
-        "search_row": "[影片網址 / Click Here]({0})\n影片時長：{1}\n",
+        "search_row": "[影片網址 / 點擊這裏]({0})\n影片時長：{1}\n",
         "reloaded": ":white_check_mark: 機器人己重新載入！",
         "enable_loopqueue": "已啟用歌單循環",
         "disable_loopqueue": "已關閉歌單循環",
@@ -114,7 +114,8 @@
         "renamed_playlist": "`{0}` 已重新命名為`{1}`",
         "play_invalid_index_playlist": ":x: 請提供有效的歌曲號碼！",
         "play_single_playlist": ":white_check_mark: 已從 `{0}` 將歌曲 `{1}` 加入至播放序列中",
-        "play_playlist": ":white_check_mark: 已從 `{0}` 將 `{1}` 首歌曲加入至播放序列中"
+        "play_playlist": ":white_check_mark: 已從 `{0}` 將 `{1}` 首歌曲加入至播放序列中",
+        "cannot_join_unk": ":x: 因未知原因無法加入語音頻道！"
     },
     "queue_embed": {
         "title": "正在播放",
@@ -148,7 +149,7 @@
         "playlist": "管理播放清單",
         "musicversion": "顯示cog目前的版本"
     },
-    "cog_name": "Discord 音樂 Cog v1.10.7",
+    "cog_name": "Discord 音樂 Cog v2.0 beta 3",
     "author": "作者",
     "cog_github": "Cog Github 連結",
     "cog_github_link": "[連結](https://github.com/benwong01f611/discord-music-cog)",
