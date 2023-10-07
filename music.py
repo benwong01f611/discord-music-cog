@@ -114,7 +114,7 @@ async def respond(ctx, message: str=None, color=discord.Embed.Empty, embed: disc
     try:
         return await ctx.reply(embed=embed, mention_author=False, view=view)
     except:
-        return (await ctx.respond(embed=embed, view=view)) # Slash
+        return await ctx.respond(embed=embed, view=view) # Slash
 
 # Check is user in guild is in voice channel, if yes returns True and the channel object, otherwise return False
 def isUserInChannel(user):
@@ -166,7 +166,7 @@ async def _join(ctx, from_cmd=False, author=None):
         async with timeout(10):
             ctx.voice_state.voice = await destination.connect()
     except asyncio.TimeoutError:
-        await respond(ctx, loc["message"]["cannot_join_unk"], color=0xff0000)
+        await respond(ctx, loc["messages"]["cannot_join_unk"], color=0xff0000)
         return False
     
     if from_cmd:
@@ -195,7 +195,7 @@ async def _play(ctx, search, loop, search_msg=None):
         await _join(ctx, author=ctx.author)
         # Errors may occur while joining the channel, if the voice is None, don't continue
         if not ctx.voice_state.voice:
-            return await respond(ctx, loc["messages"]["error_joining"], color=0xff0000)
+            return await respond(ctx, loc["messages"]["cannot_join_unk"], color=0xff0000)
     
     try:
         if search_msg is None:
@@ -225,7 +225,7 @@ async def _play(ctx, search, loop, search_msg=None):
                     duration = 0
                 await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": duration})
             #await respond(ctx, loc["messages"]["added_multiple_song"].format(songs+1), color=0x1eff00)
-            await editMessage(searching_msg, discord.Embed(title=loc["added_multiple_song"].format(songs+1), color=0xff0000))
+            await editMessage(searching_msg, discord.Embed(title=loc["messages"]["added_multiple_song"].format(songs+1), color=0xff0000))
         else:
             # Just a single song
             try:
@@ -967,7 +967,7 @@ class PlayerControlView(discord.ui.View):
             loc["queue_embed"]["body"].format(self.voice_state.current.source.title, self.voice_state.current.source.url, parse_duration(self.voice_state.current.source.duration_int - int(time.time() - self.voice_state.current.starttime - self.voice_state.current.pause_duration))),
             "url"
         ))
-    
+
     async def update(self, interaction):
         if self.voice_state.current.paused:
             self.children[0].emoji = "▶"
@@ -1027,22 +1027,24 @@ class Music(commands.Cog):
         if not (str(error) == "Application Command raised an exception: AttributeError: 'NoneType' object has no attribute 'is_finished'"):
             await ctx.send(loc["error"]["error_msg"].format(str(error)))
     
-    @commands.slash_command(description=loc["descriptions"]["join"])
+    @commands.command(description=loc["descriptions"]["join"])
     async def join(self, ctx):
         await _join(ctx, from_cmd=True, author=ctx.author)
     
-    @commands.slash_command(aliases=['disconnect', 'dc'], description=loc["descriptions"]["leave"])
+    @commands.command(aliases=['disconnect', 'dc'], description=loc["descriptions"]["leave"])
     async def leave(self, ctx):
         # Clears the queue and leave the channel
         if not (await checkUserAndBotChannel(ctx)):
             return
+        await ctx.message.add_reaction("👋")
         await ctx.voice_state.stop(leave=True)
         # Leaves the channel and delete the data from memory
         del self.voice_states[ctx.guild.id]
-        await respond(ctx, loc["messages"]["left"])
+        
+        #await respond(ctx, loc["messages"]["left"])
 
-    @commands.slash_command(aliases=['v'], description=loc["descriptions"]["volume"])
-    async def volume(self, ctx, volume:discord.Option(int, loc["descriptions"]["volume"]) = None):
+    @commands.command(aliases=['v'], description=loc["descriptions"]["volume"])
+    async def volume(self, ctx, volume=None):
         # If the parameter is set, try to parse it as an integer
         try:
             if volume is not None:
@@ -1063,14 +1065,14 @@ class Music(commands.Cog):
             # Return the current volume
             return await respond(ctx, loc["messages"]["current_volume"].format(int(ctx.voice_state.volume*100)), color=0x1eff00)
 
-    @commands.slash_command(description=loc["descriptions"]["now"])
+    @commands.command(description=loc["descriptions"]["now"])
     async def now(self, ctx):
         # Display currently playing song
         if ctx.voice_state.current is None:
             return await respond(ctx, loc["messages"]["no_playing"], color=0xff0000)
         await respond(ctx, embed=ctx.voice_state.current.create_embed("now"))
 
-    @commands.slash_command(description=loc["descriptions"]["pause"])
+    @commands.command(description=loc["descriptions"]["pause"])
     async def pause(self, ctx):
         # Pauses the player
         if not (await checkUserAndBotChannel(ctx)):
@@ -1081,13 +1083,13 @@ class Music(commands.Cog):
             # Sets the pause time
             ctx.voice_state.current.pause_time = time.time()
             ctx.voice_state.current.paused = True
-            await respond(ctx, loc["messages"]["paused"])
+            await ctx.message.add_reaction('⏸')
         else:
             await respond(ctx, loc["messages"]["no_playing"], color=0xff0000)
         if ctx.voice_state.message:
             await ctx.voice_state.update()
 
-    @commands.slash_command(aliases=['r'], description=loc["descriptions"]["resume"])
+    @commands.command(aliases=['r'], description=loc["descriptions"]["resume"])
     async def resume(self, ctx):
         # Resumes the bot
         if not (await checkUserAndBotChannel(ctx)):
@@ -1099,13 +1101,13 @@ class Music(commands.Cog):
             ctx.voice_state.current.pause_duration += time.time() - ctx.voice_state.current.pause_time
             ctx.voice_state.current.pause_time = 0
             ctx.voice_state.current.paused = False
-            await respond(ctx, loc["messages"]["resumed"])
+            await ctx.message.add_reaction('▶')
         else:
             await respond(ctx, loc["messages"]["no_paused"], color=0xff0000)
         if ctx.voice_state.message:
             await ctx.voice_state.update()
-
-    @commands.slash_command(description=loc["descriptions"]["stop"])
+    
+    @commands.command(description=loc["descriptions"]["stop"])
     async def stop(self, ctx):
         # Stops the bot and clears the queue
         if not (await checkUserAndBotChannel(ctx)):
@@ -1114,9 +1116,9 @@ class Music(commands.Cog):
         if ctx.voice_state.is_playing:
             await ctx.voice_state.stop()
             ctx.voice_state.stopped = True
-            await respond(ctx, loc["messages"]["stop"])
+            await ctx.message.add_reaction('⏹')
     
-    @commands.slash_command(aliases=['s'], description=loc["descriptions"]["skip"])
+    @commands.command(aliases=['s'], description=loc["descriptions"]["skip"])
     async def skip(self, ctx):
         # Skips the current song
         if not (await checkUserAndBotChannel(ctx)):
@@ -1124,10 +1126,10 @@ class Music(commands.Cog):
         if not ctx.voice_state.is_playing:
             return await respond(ctx, loc["messages"]["no_playing"], color=0xff0000)
         ctx.voice_state.skip()
-        await respond(ctx, loc["messages"]["skipped"])
+        await ctx.message.add_reaction('⏭')
         
-    @commands.slash_command(aliases=["q"], description=loc["descriptions"]["queue"])
-    async def queue(self, ctx, *, page:discord.Option(int, loc["descriptions"]["queue"])=None):
+    @commands.command(aliases=["q"], description=loc["descriptions"]["queue"])
+    async def queue(self, ctx, *, page=None):
         # Shows the queue, add page number to view different pages
         if not (await checkUserAndBotChannel(ctx)):
             return
@@ -1149,16 +1151,16 @@ class Music(commands.Cog):
             "url"
         ))
        
-    @commands.slash_command(description=loc["descriptions"]["shuffle"])
+    @commands.command(description=loc["descriptions"]["shuffle"])
     async def shuffle(self, ctx):
         # Shuffles the queue
         if not (await checkUserAndBotChannel(ctx)):
             return
         ctx.voice_state.songs.shuffle()
-        await respond(ctx, loc["messages"]["shuffled"])
+        await ctx.message.add_reaction('🔀')
 
-    @commands.slash_command(description=loc["descriptions"]["remove"])
-    async def remove(self, ctx, index:discord.Option(int, loc["descriptions"]["remove"], required=True)):
+    @commands.command(description=loc["descriptions"]["remove"])
+    async def remove(self, ctx, index=None):
         if not (await checkUserAndBotChannel(ctx)):
             return
         # Try to parse the index of the song that is going to be removed
@@ -1174,19 +1176,19 @@ class Music(commands.Cog):
 
         await ctx.message.add_reaction('🗑️')
 
-    @commands.slash_command(description=loc["descriptions"]["loop"])
+    @commands.command(description=loc["descriptions"]["loop"])
     async def loop(self, ctx):
         # Toggle the looping of the current song
         if not (await checkUserAndBotChannel(ctx)):
             return
         # Inverse boolean value to loop and unloop.
         ctx.voice_state.loop = not ctx.voice_state.loop
-        await respond(ctx, loc["messages"][("enable" if ctx.voice_state.loop else "disable") + "_loop"])
+        await ctx.message.add_reaction('🔂' if ctx.voice_state.loop else '▶️')
         if ctx.voice_state.message:
             await ctx.voice_state.update()
 
-    @commands.slash_command(aliases=["p"], description=loc["descriptions"]["play"])
-    async def play(self, ctx, search:discord.Option(str, loc["descriptions"]["play"], required=True)):
+    @commands.command(aliases=["p"], description=loc["descriptions"]["play"])
+    async def play(self, ctx, *, search=None):
         # Plays a song, mostly from Youtube
         """Plays a song.
         If there are songs in the queue, this will be queued until the
@@ -1200,8 +1202,8 @@ class Music(commands.Cog):
         
         await _play(ctx, search, self.bot.loop)
             
-    @commands.slash_command(description=loc["descriptions"]["search"])
-    async def search(self, ctx, keyword:discord.Option(str, loc["descriptions"]["search"], required=True)):
+    @commands.command(description=loc["descriptions"]["search"])
+    async def search(self, ctx, *, keyword=None):
         # Search from Youtube and returns 10 songs
         if keyword == None:
             return await respond(ctx, loc["messages"]["play_no_keyword"], color=0xff0000)
@@ -1232,10 +1234,10 @@ class Music(commands.Cog):
 
         message = await respond(ctx, embed=embed, view=view)
         if isinstance(message, discord.Interaction):
-            message = await message.original_message()
+            message = await message.original_response()
         view.message = message
 
-    @commands.slash_command(description=loc["descriptions"]["musicreload"])
+    @commands.command(description=loc["descriptions"]["musicreload"])
     async def musicreload(self, ctx):
         # Disconnect the bot and delete voice state from internal memory in case something goes wrong
         try:
@@ -1253,7 +1255,7 @@ class Music(commands.Cog):
         del self.voice_states[ctx.guild.id]
         await respond(ctx, loc["messages"]["reloaded"], color=discord.Color.green())
     
-    @commands.slash_command(aliases=['lq'], description=loc["descriptions"]["loopqueue"])
+    @commands.command(aliases=['lq'], description=loc["descriptions"]["loopqueue"])
     async def loopqueue(self, ctx):
         if not (await checkUserAndBotChannel(ctx)):
             return
@@ -1266,12 +1268,12 @@ class Music(commands.Cog):
         except:
             pass
         
-        await respond(ctx, loc["messages"][("enable" if ctx.voice_state.loopqueue else "disable") + "_loopqueue"])
+        await ctx.message.add_reaction('🔁' if ctx.voice_state.loopqueue else '▶️')
         if ctx.voice_state.message:
             await ctx.voice_state.update()
     
-    @commands.slash_command(aliases=["pf"], description=loc["descriptions"]["playfile"])
-    async def playfile(self, ctx, attachment:discord.Option(discord.Attachment, loc["descriptions"]["playfile"], required=True), title=None):
+    @commands.command(aliases=["pf"], description=loc["descriptions"]["playfile"])
+    async def playfile(self, ctx, *, title=None):
         # Plays uploaded file
         if isBotInChannel(ctx):
             if isBotAndUserInSameChannel(ctx, ctx.author):
@@ -1282,8 +1284,11 @@ class Music(commands.Cog):
             await _join(ctx, author=ctx.author)
             # Errors may occur while joining the channel, if the voice is None, don't continue
             if not ctx.voice_state.voice:
-                return await respond(ctx, loc["messages"]["error_joining"], color=0xff0000)
-        
+                return await respond(ctx, loc["messages"]["cannot_join_unk"], color=0xff0000)
+        # No file provided
+        if len(ctx.message.attachments) == 0:
+            return await respond(ctx, loc["messages"]["no_file"], color=0xff0000)
+        attachment = ctx.message.attachments[0]
         # Creates temporary folder for storing the audio file
         if not os.path.isdir("./tempMusic"):
             os.mkdir("./tempMusic")
@@ -1305,7 +1310,7 @@ class Music(commands.Cog):
         await respond(ctx, loc["messages"]["added_song"].format(title.replace("_", "\\_")), color=0x1eff00)
         ctx.voice_state.stopped = False
 
-    @commands.slash_command(aliases=["rs"])
+    @commands.command(aliases=["rs"])
     async def runningservers(self, ctx):
         # Check whether the user id is in the author list
         if ctx.author.id in authors:
@@ -1317,8 +1322,8 @@ class Music(commands.Cog):
                     desc += f'{self.bot.get_guild(guild_id).name} / {guild_id}\n'
             return await respond(ctx, embed=discord.Embed(title=loc["messages"]["runningservers"].format(str(server_count)), description=desc[:-1]))
 
-    @commands.slash_command(description=loc["descriptions"]["seek"])
-    async def seek(self, ctx, seconds:discord.Option(str, loc["descriptions"]["seek"])=None):
+    @commands.command(description=loc["descriptions"]["seek"])
+    async def seek(self, ctx, seconds=None):
         if not (await checkUserAndBotChannel(ctx)):
             return
         
@@ -1368,7 +1373,7 @@ class Music(commands.Cog):
         else:
             await respond(ctx, loc["messages"]["no_playing"], color=0xff0000)
 
-    @commands.slash_command(description=loc["descriptions"]["musicversion"])
+    @commands.command(description=loc["descriptions"]["musicversion"])
     async def musicversion(self, ctx):
         await respond(ctx, embed=discord.Embed(title=loc["cog_name"]).
         add_field(name=loc["author"], value="<@127312771888054272>").

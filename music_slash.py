@@ -114,7 +114,7 @@ async def respond(ctx, message: str=None, color=discord.Embed.Empty, embed: disc
     try:
         return await ctx.reply(embed=embed, mention_author=False, view=view)
     except:
-        return (await ctx.respond(embed=embed, view=view)) # Slash
+        return await ctx.respond(embed=embed, view=view) # Slash
 
 # Check is user in guild is in voice channel, if yes returns True and the channel object, otherwise return False
 def isUserInChannel(user):
@@ -166,7 +166,7 @@ async def _join(ctx, from_cmd=False, author=None):
         async with timeout(10):
             ctx.voice_state.voice = await destination.connect()
     except asyncio.TimeoutError:
-        await respond(ctx, loc["message"]["cannot_join_unk"], color=0xff0000)
+        await respond(ctx, loc["messages"]["cannot_join_unk"], color=0xff0000)
         return False
     
     if from_cmd:
@@ -195,7 +195,7 @@ async def _play(ctx, search, loop, search_msg=None):
         await _join(ctx, author=ctx.author)
         # Errors may occur while joining the channel, if the voice is None, don't continue
         if not ctx.voice_state.voice:
-            return await respond(ctx, loc["messages"]["error_joining"], color=0xff0000)
+            return await respond(ctx, loc["messages"]["cannot_join_unk"], color=0xff0000)
     
     try:
         if search_msg is None:
@@ -225,7 +225,7 @@ async def _play(ctx, search, loop, search_msg=None):
                     duration = 0
                 await ctx.voice_state.songs.put({"url": entry["url"], "title": entry["title"], "user": ctx.author, "duration": duration})
             #await respond(ctx, loc["messages"]["added_multiple_song"].format(songs+1), color=0x1eff00)
-            await editMessage(searching_msg, discord.Embed(title=loc["added_multiple_song"].format(songs+1), color=0xff0000))
+            await editMessage(searching_msg, discord.Embed(title=loc["messages"]["added_multiple_song"].format(songs+1), color=0x1eff00))
         else:
             # Just a single song
             try:
@@ -875,7 +875,7 @@ class SearchView(discord.ui.View):
         self.ctx = ctx
         self.data = data
         self.cog = cog
-        super().__init__(timeout=60)
+        super().__init__(timeout=3)
         self.add_item(SearchMenu(self.bot, data, cog, ctx))
     async def on_timeout(self):
         if not self.children[0].completed:
@@ -1022,8 +1022,8 @@ class Music(commands.Cog):
 
     # Return a meaningful message to user when error occurs
     async def cog_command_error(self, ctx, error):
-        #formatted_error = traceback.format_exc()
-        #await ctx.send("Stacktrace", file=discord.File(io.BytesIO(traceback.format_exc().encode("utf-8")), f"error.txt"))
+        formatted_error = traceback.format_exc()
+        await ctx.send("Stacktrace", file=discord.File(io.BytesIO(traceback.format_exc().encode("utf-8")), f"error.txt"))
         if not (str(error) == "Application Command raised an exception: AttributeError: 'NoneType' object has no attribute 'is_finished'"):
             await ctx.send(loc["error"]["error_msg"].format(str(error)))
     
@@ -1230,10 +1230,7 @@ class Music(commands.Cog):
         # Send the message of the results
         view = SearchView(self.bot, result, ctx, self)
 
-        message = await respond(ctx, embed=embed, view=view)
-        if isinstance(message, discord.Interaction):
-            message = await message.original_message()
-        view.message = message
+        await respond(ctx, embed=embed, view=view)
 
     @commands.slash_command(description=loc["descriptions"]["musicreload"])
     async def musicreload(self, ctx):
@@ -1282,7 +1279,7 @@ class Music(commands.Cog):
             await _join(ctx, author=ctx.author)
             # Errors may occur while joining the channel, if the voice is None, don't continue
             if not ctx.voice_state.voice:
-                return await respond(ctx, loc["messages"]["error_joining"], color=0xff0000)
+                return await respond(ctx, loc["messages"]["cannot_join_unk"], color=0xff0000)
         
         # Creates temporary folder for storing the audio file
         if not os.path.isdir("./tempMusic"):
