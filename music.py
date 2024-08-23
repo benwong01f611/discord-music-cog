@@ -7,7 +7,7 @@ import os
 import time
 
 import discord
-import youtube_dl
+import yt_dlp as youtube_dl
 from async_timeout import timeout
 from discord.ext import commands
 

@@ -1,3 +1,6 @@
+v2.0.2
+- Changed youtube_dl to yt-dlp as youtube_dl seems getting 403 forbidden
+- 10 months after v2.0.1 lol
 v2.0.1
 - Small fixes related to loc
 - Just realized that I replaced the non-slash command version with slash command version
