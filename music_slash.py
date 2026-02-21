@@ -752,7 +752,7 @@ class VoiceState:
                 await asyncio.sleep(0.25)
                 self.start_time = time.time()
                 self.current.starttime = time.time()
-                if not self.forbidden:
+                if not self.forbidden and not self.loop:
                     self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"), view=PlayerControlView(self.bot, self))
                 self.forbidden = False
                 self.voice.play(self.current.source, after=self.play_next_song)
@@ -760,7 +760,7 @@ class VoiceState:
                 self.volume_updater = self.bot.loop.create_task(self.update_volume())
                 await self.next.wait()  
                 # Delete the message of the song playing
-                if not self.forbidden:
+                if not self.forbidden and not self.loop:
                     try:
                         await self.message.delete()
                     except:
