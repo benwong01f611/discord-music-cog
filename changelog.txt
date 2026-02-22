@@ -1,3 +1,5 @@
+v2.0.4
+- Fixed the player is not showing when looped
 v2.0.3
 - When the song is looping, the message will not be deleted to reduce message spam
 v2.0.2

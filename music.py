@@ -106,7 +106,7 @@ def parse_duration_raw(duration: int):
     return ':'.join(durations)
 
 # Function for responding to the user
-async def respond(ctx, message: str=None, color=discord.Embed.Empty, embed: discord.Embed=None, view: discord.ui.View=None):
+async def respond(ctx, message: str=None, color=discord.Color.default(), embed: discord.Embed=None, view: discord.ui.View=None):
     if embed is not None and message is not None:
         raise AttributeError("Message is not None when embed is also not None")
     if embed is None:
@@ -752,7 +752,8 @@ class VoiceState:
                 await asyncio.sleep(0.25)
                 self.start_time = time.time()
                 self.current.starttime = time.time()
-                if not self.forbidden and not self.loop:
+                # If self.message is None, which means this is the first song or the previous music is looped, the message will not be deleted
+                if not self.forbidden and self.message is None:
                     self.message = await self.current.source.channel.send(embed=self.current.create_embed("play"), view=PlayerControlView(self.bot, self))
                 self.forbidden = False
                 self.voice.play(self.current.source, after=self.play_next_song)
@@ -760,9 +761,10 @@ class VoiceState:
                 self.volume_updater = self.bot.loop.create_task(self.update_volume())
                 await self.next.wait()  
                 # Delete the message of the song playing
-                if not self.forbidden and not self.loop:
+                if not self.forbidden and (not self.loop or self.skipped):
                     try:
                         await self.message.delete()
+                        self.message = None
                     except:
                         pass
                 # If loop queue, put the current song back to the end of the queue
@@ -817,6 +819,7 @@ class VoiceState:
                 self.audio_player.cancel()
                 try:
                     await self.message.delete()
+                    self.message = None
                 except:
                     pass
             if self.listener_task and not self.listener_task.done():
